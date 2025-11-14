@@ -1,0 +1,55 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+<<<<<<< HEAD
+  "description": "A new Flutter project.",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Hemeswari951/HRMemployee_view.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Hemeswari951/HRMemployee_view/issues"
+  },
+  "homepage": "https://github.com/Hemeswari951/HRMemployee_view#readme",
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1"
+=======
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+     "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "nodemon index.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "node": ">=18 <19"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "body-parser": "^2.2.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.17.1",
+    "multer": "^2.0.2",
+    "nodemon": "^3.1.10"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+>>>>>>> origin/master
+  }
+}
