@@ -46,7 +46,6 @@ class _AudioCallPageState extends State<AudioCallPage> {
   void _setupCallManager() {
     _callManager = CallManager(
       serverUrl: 'https://zeai-project.onrender.com',
-      //serverUrl: 'wss://zeai-project.onrender.com',
 
       currentUserId: widget.currentUserId,
     );
