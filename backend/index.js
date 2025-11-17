@@ -275,6 +275,21 @@ io.on("connection", (socket) => {
     }
   });
 
+  // 🔴 NEW: Handle call accepted notification
+socket.on("call-accepted-by-receiver", (data) => {
+  const { to, from, isVideo } = data;
+  console.log(`✅ Call accepted by ${from}, notifying ${to}`);
+  
+  const targetSocketId = activeUsers.get(to);
+  if (targetSocketId) {
+    io.to(targetSocketId).emit("call-accepted-by-receiver", {
+      from,
+      isVideo: isVideo !== false
+    });
+    console.log(`📢 Acceptance notification sent to ${to}`);
+  }
+});
+
   // 🔴 NEW: Improved Call Initiation (better than existing call-user)
   socket.on("initiate-call", (data) => {
     const { to, from, roomId, callerName, isVideo } = data;
