@@ -25,12 +25,16 @@ class CallManager {
   String? _currentTarget;
   String? currentRoomId;
 
+  // 🔴 NEW: Queue to store early ICE candidates
+  final List<RTCIceCandidate> _pendingCandidates = [];
+  bool _isAnswering = false;
+
   CallManager({required this.serverUrl, required this.currentUserId});
 
   // ✅ Initialize socket connection
   Future<void> init() async {
     socket = IO.io(serverUrl, <String, dynamic>{
-      'transports': ['websocket', 'polling'], // 🔴 ADDED: polling fallback
+      'transports': ['websocket', 'polling'],
       'autoConnect': true,
       'forceNew': true,
     });
@@ -51,31 +55,52 @@ class CallManager {
       }
     });
 
-    // 🔴 NEW: Listen for WebRTC offer from backend
+    // 🔴 FIXED: WebRTC Offer Handler
     socket.on('offer', (data) async {
       try {
         debugPrint('📥 Received offer from ${data['from']}');
+        _isAnswering = true;
+        _pendingCandidates.clear();
+
         final from = data['from'] as String;
         final offerMap = Map<String, dynamic>.from(data['offer'] ?? {});
         final roomId = data['roomId'] as String?;
 
         if (roomId != null) currentRoomId = roomId;
+        _currentTarget = from;
 
         final sdp = offerMap['sdp'] as String?;
         final type = offerMap['type'] as String?;
+        final isVideo = offerMap['isVideo'] == true;
 
         if (sdp != null && type != null) {
-          // Create peer connection if not exists
-          if (_pc == null) {
-            final isVideo = offerMap['isVideo'] == true;
-            await _setupReceiverPeerConnection(from, isVideo);
-          }
+          // 🔴 CRITICAL: Setup peer connection FIRST
+          await _setupReceiverPeerConnection(from, isVideo);
 
+          // Set remote description
           await _pc!.setRemoteDescription(RTCSessionDescription(sdp, type));
           debugPrint('✅ Remote description set (offer)');
 
+          // 🔴 NEW: Process pending candidates AFTER peer connection ready
+          if (_pendingCandidates.isNotEmpty) {
+            debugPrint(
+              '📦 Adding ${_pendingCandidates.length} pending candidates',
+            );
+            for (var candidate in _pendingCandidates) {
+              try {
+                await _pc!.addCandidate(candidate);
+              } catch (e) {
+                debugPrint('⚠ Error adding pending candidate: $e');
+              }
+            }
+            _pendingCandidates.clear();
+          }
+
           // Create and send answer
-          final answer = await _pc!.createAnswer();
+          final answer = await _pc!.createAnswer({
+            'offerToReceiveAudio': true,
+            'offerToReceiveVideo': isVideo,
+          });
           await _pc!.setLocalDescription(answer);
 
           socket.emit('answer', {
@@ -85,13 +110,16 @@ class CallManager {
             'roomId': roomId,
           });
           debugPrint('📤 Answer sent to $from');
+
+          _isAnswering = false;
         }
       } catch (e) {
         debugPrint('⚠ offer handler error: $e');
+        _isAnswering = false;
       }
     });
 
-    // 🔴 NEW: Listen for WebRTC answer from backend
+    // 🔴 NEW: WebRTC Answer Handler
     socket.on('answer', (data) async {
       try {
         debugPrint('📥 Received answer from ${data['from']}');
@@ -102,6 +130,21 @@ class CallManager {
         if (sdp != null && type != null && _pc != null) {
           await _pc!.setRemoteDescription(RTCSessionDescription(sdp, type));
           debugPrint('✅ Remote description set (answer)');
+
+          // 🔴 NEW: Process pending candidates after answer
+          if (_pendingCandidates.isNotEmpty) {
+            debugPrint(
+              '📦 Adding ${_pendingCandidates.length} pending candidates',
+            );
+            for (var candidate in _pendingCandidates) {
+              try {
+                await _pc!.addCandidate(candidate);
+              } catch (e) {
+                debugPrint('⚠ Error adding pending candidate: $e');
+              }
+            }
+            _pendingCandidates.clear();
+          }
         }
       } catch (e) {
         debugPrint('⚠ answer handler error: $e');
@@ -136,7 +179,7 @@ class CallManager {
       _cleanupPeer();
     });
 
-    // 🔴 FIXED: ICE candidates handler
+    // 🔴 FIXED: ICE Candidate Handler with Queueing
     socket.on('ice-candidate', (data) async {
       try {
         debugPrint('📥 Received ice-candidate');
@@ -161,11 +204,17 @@ class CallManager {
 
         final candidate = RTCIceCandidate(candidateStr, sdpMid, sdpIndex);
 
-        if (_pc != null) {
-          await _pc!.addCandidate(candidate);
-          debugPrint('✅ ICE candidate added');
+        // 🔴 CRITICAL FIX: Queue candidates if peer connection not ready
+        if (_pc == null || _isAnswering) {
+          debugPrint('📦 Queueing candidate (PC not ready yet)');
+          _pendingCandidates.add(candidate);
         } else {
-          debugPrint('⚠ PeerConnection null when adding candidate');
+          try {
+            await _pc!.addCandidate(candidate);
+            debugPrint('✅ ICE candidate added immediately');
+          } catch (e) {
+            debugPrint('⚠ Error adding candidate: $e');
+          }
         }
       } catch (e) {
         debugPrint('⚠ ice-candidate error: $e');
@@ -191,12 +240,22 @@ class CallManager {
     });
 
     if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
-      await Helper.setSpeakerphoneOn(true);
+      try {
+        await Helper.setSpeakerphoneOn(true);
+      } catch (e) {
+        debugPrint('⚠ Speaker setup error: $e');
+      }
     }
 
     debugPrint(
       '🔈 Local audio tracks: ${_localStream?.getAudioTracks().length}',
     );
+    if (isVideo) {
+      debugPrint(
+        '🎥 Local video tracks: ${_localStream?.getVideoTracks().length}',
+      );
+    }
+
     onLocalStream?.call(_localStream!);
 
     _pc = await _createPeerConnection(isVideo, fromId);
@@ -204,6 +263,7 @@ class CallManager {
     if (_localStream != null) {
       for (var track in _localStream!.getTracks()) {
         await _pc!.addTrack(track, _localStream!);
+        debugPrint('➕ Added local track: ${track.kind}');
       }
     }
   }
@@ -221,7 +281,6 @@ class CallManager {
             'stun:stun1.l.google.com:19302',
           ],
         },
-        // 🔴 ADDED: TURN servers for laptop-to-laptop
         {
           'urls': 'turn:openrelay.metered.ca:80',
           'username': 'openrelayproject',
@@ -238,7 +297,7 @@ class CallManager {
           'credential': 'openrelayproject',
         },
       ],
-      'sdpSemantics': 'unified-plan', // 🔴 ADDED
+      'sdpSemantics': 'unified-plan',
     };
 
     final pc = await createPeerConnection(configuration);
@@ -248,6 +307,9 @@ class CallManager {
       debugPrint('🔄 ICE connection state: $state');
       if (state == RTCIceConnectionState.RTCIceConnectionStateFailed) {
         debugPrint('❌ ICE connection failed');
+      }
+      if (state == RTCIceConnectionState.RTCIceConnectionStateConnected) {
+        debugPrint('✅ ICE connection established');
       }
     };
 
@@ -274,20 +336,20 @@ class CallManager {
       }
     };
 
-    // 🔴 ENHANCED: Track handling with better logging
+    // 🔴 FIXED: Track handling - Safe for Web
     pc.onTrack = (RTCTrackEvent event) {
       debugPrint(
-        '📹 onTrack: kind=${event.track.kind}, streams=${event.streams.length}',
+        '📹 onTrack: kind=${event.track.kind}, streams=${event.streams.length}, enabled=${event.track.enabled}',
       );
 
       if (event.streams.isNotEmpty) {
         final stream = event.streams.first;
-        debugPrint(
-          '✅ Remote stream received with ${stream.getTracks().length} tracks',
-        );
+        final audioTracks = stream.getAudioTracks().length;
+        final videoTracks = stream.getVideoTracks().length;
+        debugPrint('✅ Remote stream: audio=$audioTracks, video=$videoTracks');
         onRemoteStream?.call(stream);
       } else {
-        debugPrint('⚠ onTrack event but no streams');
+        debugPrint('⚠ onTrack but no streams - will receive in next event');
       }
     };
 
@@ -301,7 +363,7 @@ class CallManager {
       'roomId': currentRoomId,
       'creator': currentUserId,
       'target': targetId,
-      'isVideo': true, // 🔴 ADDED: isVideo flag
+      'isVideo': true,
     });
     debugPrint("🏠 Room created: $currentRoomId by $currentUserId");
   }
@@ -332,6 +394,7 @@ class CallManager {
     required bool isVideo,
   }) async {
     _currentTarget = targetId;
+    _pendingCandidates.clear();
 
     _localStream = await navigator.mediaDevices.getUserMedia({
       'audio': {
@@ -343,12 +406,22 @@ class CallManager {
     });
 
     if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
-      await Helper.setSpeakerphoneOn(true);
+      try {
+        await Helper.setSpeakerphoneOn(true);
+      } catch (e) {
+        debugPrint('⚠ Speaker setup error: $e');
+      }
     }
 
     debugPrint(
       '🔈 Local audio tracks: ${_localStream?.getAudioTracks().length}',
     );
+    if (isVideo) {
+      debugPrint(
+        '🎥 Local video tracks: ${_localStream?.getVideoTracks().length}',
+      );
+    }
+
     onLocalStream?.call(_localStream!);
 
     _pc = await _createPeerConnection(isVideo, targetId);
@@ -356,10 +429,10 @@ class CallManager {
     if (_localStream != null) {
       for (var track in _localStream!.getTracks()) {
         await _pc!.addTrack(track, _localStream!);
+        debugPrint('➕ Added local track: ${track.kind}');
       }
     }
 
-    // ✅ Create room for group call
     currentRoomId = "room_${DateTime.now().millisecondsSinceEpoch}";
 
     // 🔴 CRITICAL FIX: Create offer with proper options
@@ -375,7 +448,7 @@ class CallManager {
     socket.emit('offer', {
       'to': targetId,
       'from': currentUserId,
-      'offer': {'sdp': offer.sdp, 'type': offer.type},
+      'offer': {'sdp': offer.sdp, 'type': offer.type, 'isVideo': isVideo},
       'roomId': currentRoomId,
     });
 
@@ -397,6 +470,7 @@ class CallManager {
   /// 🔴 ENHANCED: Answer a call (receiver)
   Future<void> answerCall({required String fromId, required Map signal}) async {
     _currentTarget = fromId;
+    _pendingCandidates.clear();
     final isVideo = signal['isVideo'] == true;
 
     _localStream = await navigator.mediaDevices.getUserMedia({
@@ -409,7 +483,11 @@ class CallManager {
     });
 
     if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
-      await Helper.setSpeakerphoneOn(true);
+      try {
+        await Helper.setSpeakerphoneOn(true);
+      } catch (e) {
+        debugPrint('⚠ Speaker setup error: $e');
+      }
     }
 
     debugPrint(
@@ -506,6 +584,8 @@ class CallManager {
     _pc = null;
     _localStream = null;
     _currentTarget = null;
+    _pendingCandidates.clear();
+    _isAnswering = false;
     debugPrint('🧹 Peer cleaned up');
   }
 
