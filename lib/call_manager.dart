@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'dart:io';
+import 'dart:async'; // 🔴 NEW: For Timer
 import 'package:flutter/foundation.dart';
 
 typedef IncomingCallCallback = void Function(String fromId, Map signal);
@@ -28,6 +29,11 @@ class CallManager {
   // 🔴 Queue to store early ICE candidates
   final List<RTCIceCandidate> _pendingCandidates = [];
   bool _isAnswering = false;
+
+  // 🔴 NEW: Connection retry
+  Timer? _connectionCheckTimer;
+  int _retryAttempts = 0;
+  final int _maxRetryAttempts = 3;
 
   CallManager({required this.serverUrl, required this.currentUserId});
 
@@ -344,14 +350,23 @@ class CallManager {
       debugPrint('🔄 ICE connection state: $state');
       if (state == RTCIceConnectionState.RTCIceConnectionStateFailed) {
         debugPrint('❌ ICE connection failed');
+        _retryConnection(isVideo); // 🔴 NEW: Retry on failure
       }
       if (state == RTCIceConnectionState.RTCIceConnectionStateConnected) {
         debugPrint('✅ ICE connection established');
+        _retryAttempts = 0; // Reset counter on success
+        _connectionCheckTimer?.cancel();
       }
     };
 
     pc.onConnectionState = (RTCPeerConnectionState state) {
       debugPrint('🔗 PeerConnection state: $state');
+
+      // 🔴 NEW: Retry on failure
+      if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed) {
+        debugPrint('❌ Connection failed, will retry...');
+        _retryConnection(isVideo);
+      }
     };
 
     pc.onIceGatheringState = (RTCIceGatheringState state) {
@@ -386,7 +401,7 @@ class CallManager {
         debugPrint('✅ Remote stream: audio=$audioTracks, video=$videoTracks');
         onRemoteStream?.call(stream);
       } else {
-        debugPrint('⚠ onTrack but no streams - will receive in next event');
+        debugPrint('⚠ onTrack but no streams');
       }
     };
 
@@ -433,12 +448,10 @@ class CallManager {
     _currentTarget = targetId;
     _pendingCandidates.clear();
 
-    // 🔴 CRITICAL FIX: Don't get media here, wait for accept
     currentRoomId = "room_${DateTime.now().millisecondsSinceEpoch}";
 
     debugPrint('📞 Initiating call to $targetId (waiting for accept)');
 
-    // Send call-user to show incoming call popup
     socket.emit('call-user', {
       'target': targetId,
       'from': currentUserId,
@@ -524,7 +537,6 @@ class CallManager {
 
     debugPrint('📞 Answering call from $fromId, video=$isVideo');
 
-    // 🔴 CRITICAL: Get media with correct video setting
     _localStream = await navigator.mediaDevices.getUserMedia({
       'audio': {
         'echoCancellation': true,
@@ -578,14 +590,12 @@ class CallManager {
     final remoteSdp = signal['sdp'] as String?;
     final remoteType = signal['type'] as String?;
 
-    // 🔴 FIX: Only set remote description if offer exists
     if (remoteSdp != null && remoteType != null) {
       await _pc!.setRemoteDescription(
         RTCSessionDescription(remoteSdp, remoteType),
       );
       debugPrint('✅ Remote description set from signal');
 
-      // Create answer
       final answer = await _pc!.createAnswer({
         'offerToReceiveAudio': true,
         'offerToReceiveVideo': isVideo,
@@ -610,13 +620,55 @@ class CallManager {
         '✅ Answer sent with ${isVideo ? "video+audio" : "audio only"}',
       );
     } else {
-      // 🔴 NEW: No offer yet, notify caller to send offer
       debugPrint('📢 Notifying caller that call is accepted');
       socket.emit('call-accepted-by-receiver', {
         'to': fromId,
         'from': currentUserId,
         'isVideo': isVideo,
       });
+    }
+  }
+
+  /// 🔴 NEW: Retry connection if initial attempt fails
+  Future<void> _retryConnection(bool isVideo) async {
+    if (_retryAttempts >= _maxRetryAttempts) {
+      debugPrint('❌ Max retry attempts reached, giving up');
+      return;
+    }
+
+    if (_currentTarget == null || _pc == null) {
+      debugPrint('⚠ Cannot retry: missing target or peer connection');
+      return;
+    }
+
+    _retryAttempts++;
+    debugPrint(
+      '🔄 Connection retry attempt $_retryAttempts/$_maxRetryAttempts',
+    );
+
+    await Future.delayed(Duration(seconds: 2 * _retryAttempts));
+
+    try {
+      debugPrint('🔄 Attempting ICE restart...');
+
+      final offer = await _pc!.createOffer({
+        'iceRestart': true,
+        'offerToReceiveAudio': true,
+        'offerToReceiveVideo': isVideo,
+      });
+
+      await _pc!.setLocalDescription(offer);
+
+      socket.emit('offer', {
+        'to': _currentTarget,
+        'from': currentUserId,
+        'offer': {'sdp': offer.sdp, 'type': offer.type, 'isVideo': isVideo},
+        'roomId': currentRoomId,
+      });
+
+      debugPrint('✅ ICE restart offer sent');
+    } catch (e) {
+      debugPrint('⚠ ICE restart failed: $e');
     }
   }
 
@@ -650,6 +702,11 @@ class CallManager {
 
   /// ✅ Cleanup peer connection and streams
   void _cleanupPeer() {
+    // 🔴 Cancel retry timer
+    _connectionCheckTimer?.cancel();
+    _connectionCheckTimer = null;
+    _retryAttempts = 0;
+
     try {
       _pc?.close();
     } catch (_) {}
@@ -667,6 +724,7 @@ class CallManager {
 
   /// ✅ Dispose
   void dispose() {
+    _connectionCheckTimer?.cancel(); // 🔴 NEW: Cancel timer
     _cleanupPeer();
     try {
       socket.disconnect();

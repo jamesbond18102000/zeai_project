@@ -30,6 +30,7 @@ class _AudioCallPageState extends State<AudioCallPage> {
   bool _connected = false;
   bool _isMuted = false;
   bool _isSpeakerOn = false;
+  bool _isDisposing = false; // 🔴 NEW: Track disposal state
 
   @override
   void initState() {
@@ -49,34 +50,35 @@ class _AudioCallPageState extends State<AudioCallPage> {
       currentUserId: widget.currentUserId,
     );
 
-    // 🔴 FIXED: Local preview with video tracks logging
+    // 🔴 FIXED: Local preview with mounted check
     _callManager.onLocalStream = (stream) {
+      if (!mounted || _isDisposing) return;
+
       setState(() {
-        if (widget.isVideo) {
+        if (widget.isVideo && _localRenderer.srcObject == null) {
           _localRenderer.srcObject = stream;
           debugPrint(
-            '📹 Local video tracks: ${stream.getVideoTracks().length}',
+            '📹 Local video set: ${stream.getVideoTracks().length} tracks',
           );
           debugPrint(
-            '🎧 Local audio tracks: ${stream.getAudioTracks().length}',
+            '🎧 Local audio set: ${stream.getAudioTracks().length} tracks',
           );
         }
       });
     };
 
-    // 🔴 CRITICAL FIX: Always set remote stream for both audio and video
+    // 🔴 CRITICAL FIX: Remote stream with mounted check
     _callManager.onRemoteStream = (stream) {
+      if (!mounted || _isDisposing) return;
+
       setState(() {
-        // Always set remote stream (works for both audio and video)
         _remoteRenderer.srcObject = stream;
 
-        // 🔴 DEBUG: Log tracks to verify
         final audioTracks = stream.getAudioTracks().length;
         final videoTracks = stream.getVideoTracks().length;
         debugPrint('🎧 Remote audio tracks: $audioTracks');
         debugPrint('📹 Remote video tracks: $videoTracks');
 
-        // Verify tracks are enabled
         for (var track in stream.getTracks()) {
           debugPrint(
             '   ${track.kind}: enabled=${track.enabled}, muted=${track.muted}',
@@ -88,8 +90,18 @@ class _AudioCallPageState extends State<AudioCallPage> {
     };
 
     _callManager.onCallEnded = () {
-      if (!mounted) return;
-      Navigator.of(context).popUntil((route) => route.isFirst);
+      if (!mounted || _isDisposing) return;
+
+      try {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      } catch (e) {
+        debugPrint('⚠ Navigation error: $e');
+        try {
+          Navigator.of(context).pop();
+        } catch (e2) {
+          debugPrint('⚠ Fallback navigation error: $e2');
+        }
+      }
     };
 
     _startCall();
@@ -99,13 +111,11 @@ class _AudioCallPageState extends State<AudioCallPage> {
     await _callManager.init();
 
     if (widget.isCaller) {
-      // 🔴 Caller creates offer (now waits for accept before media)
       await _callManager.startCall(
         targetId: widget.targetUserId,
         isVideo: widget.isVideo,
       );
     } else if (widget.offerSignal != null) {
-      // 🔴 Receiver answers
       await _callManager.answerCall(
         fromId: widget.targetUserId,
         signal: widget.offerSignal!,
@@ -113,13 +123,12 @@ class _AudioCallPageState extends State<AudioCallPage> {
     }
 
     Future.delayed(const Duration(seconds: 1), () {
-      if (mounted && _callManager.localStream != null) {
+      if (mounted && _callManager.localStream != null && !_isDisposing) {
         setState(() {});
       }
     });
   }
 
-  /// 🎙 Mute / Unmute
   void _toggleMute() {
     final stream = _callManager.localStream;
     if (stream == null) {
@@ -131,10 +140,9 @@ class _AudioCallPageState extends State<AudioCallPage> {
       track.enabled = !track.enabled;
     }
 
-    setState(() => _isMuted = !_isMuted);
+    if (mounted) setState(() => _isMuted = !_isMuted);
   }
 
-  /// 🔊 Toggle speakerphone
   Future<void> _toggleSpeaker() async {
     try {
       if (_callManager.localStream == null) {
@@ -143,7 +151,7 @@ class _AudioCallPageState extends State<AudioCallPage> {
       }
 
       await Helper.setSpeakerphoneOn(!_isSpeakerOn);
-      setState(() => _isSpeakerOn = !_isSpeakerOn);
+      if (mounted) setState(() => _isSpeakerOn = !_isSpeakerOn);
 
       debugPrint(
         _isSpeakerOn ? '🔊 Speaker turned ON' : '🔈 Speaker turned OFF',
@@ -153,7 +161,6 @@ class _AudioCallPageState extends State<AudioCallPage> {
     }
   }
 
-  /// ➕ Invite another participant to the ongoing call
   void _inviteParticipant() async {
     final TextEditingController userIdController = TextEditingController();
 
@@ -199,10 +206,33 @@ class _AudioCallPageState extends State<AudioCallPage> {
 
   @override
   void dispose() {
-    _remoteRenderer.dispose();
-    _localRenderer.dispose();
-    _callManager.endCall(forceTargetId: widget.targetUserId);
-    _callManager.dispose();
+    _isDisposing = true; // 🔴 Set flag
+
+    // 🔴 CRITICAL FIX: Dispose in correct order with delays
+    try {
+      _callManager.endCall(forceTargetId: widget.targetUserId);
+    } catch (e) {
+      debugPrint('⚠ End call error: $e');
+    }
+
+    // 🔴 Clear renderers BEFORE disposing
+    try {
+      _remoteRenderer.srcObject = null;
+      _localRenderer.srcObject = null;
+    } catch (e) {
+      debugPrint('⚠ Clear srcObject error: $e');
+    }
+
+    Future.delayed(const Duration(milliseconds: 200), () {
+      try {
+        _remoteRenderer.dispose();
+        _localRenderer.dispose();
+        _callManager.dispose();
+      } catch (e) {
+        debugPrint('⚠ Dispose error: $e');
+      }
+    });
+
     super.dispose();
   }
 
@@ -235,26 +265,60 @@ class _AudioCallPageState extends State<AudioCallPage> {
                             ),
                           ),
                         ),
-                        // 🔴 Local video preview (small, top-right)
-                        Positioned(
-                          right: 16,
-                          top: 16,
-                          child: Container(
-                            width: 120,
-                            height: 160,
-                            decoration: BoxDecoration(
-                              border: Border.all(color: Colors.white, width: 2),
-                              borderRadius: BorderRadius.circular(12),
-                              color: Colors.black26,
-                            ),
-                            child: RTCVideoView(
-                              _localRenderer,
-                              mirror: true,
-                              objectFit: RTCVideoViewObjectFit
-                                  .RTCVideoViewObjectFitCover,
+
+                        // 🔴 FIXED: Local video preview with null check
+                        if (_localRenderer.srcObject != null)
+                          Positioned(
+                            right: 16,
+                            top: 16,
+                            child: Container(
+                              width: 120,
+                              height: 160,
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 2,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                                color: Colors.black26,
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: RTCVideoView(
+                                  _localRenderer,
+                                  mirror: true,
+                                  objectFit: RTCVideoViewObjectFit
+                                      .RTCVideoViewObjectFitCover,
+                                ),
+                              ),
                             ),
                           ),
-                        ),
+
+                        // 🔴 NEW: Placeholder when no local stream
+                        if (_localRenderer.srcObject == null)
+                          Positioned(
+                            right: 16,
+                            top: 16,
+                            child: Container(
+                              width: 120,
+                              height: 160,
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 2,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                                color: Colors.black54,
+                              ),
+                              child: const Center(
+                                child: Icon(
+                                  Icons.videocam_off,
+                                  color: Colors.white54,
+                                  size: 40,
+                                ),
+                              ),
+                            ),
+                          ),
                       ],
                     )
                   : Center(

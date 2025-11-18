@@ -33,7 +33,6 @@ const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI;
 const server = http.createServer(app);
 
-
 // ---------------- MIDDLEWARE ---------------- //
 app.use((req, res, next) => {
   console.log(`📥 ${req.method} ${req.originalUrl}`);
@@ -42,22 +41,22 @@ app.use((req, res, next) => {
 
 // ✅ Enable CORS globally (for REST APIs)
 app.use(cors({
-  origin: ["https://hrm5.netlify.app",],
-  methods: ["GET", "POST", "PUT", "DELETE"],
+  origin: ["https://hrm5.netlify.app"],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   credentials: true,
 }));
 
-// ✅ Initialize Socket.IO
-// 🔴 NEW: Added transports and timeout settings for better WebRTC performance
+// ✅ Initialize Socket.IO with optimized settings
 const io = new Server(server, {
   cors: {
-    origin: ["https://hrm5.netlify.app",],
+    origin: ["https://hrm5.netlify.app"],
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,
   },
   transports: ['websocket', 'polling'],
   pingTimeout: 60000,
   pingInterval: 25000,
+  maxHttpBufferSize: 1e8, // 🔴 NEW: Increase buffer for video
 });
 
 app.use(express.json());
@@ -174,17 +173,16 @@ app.get('/get-employee-name/:employeeId', async (req, res) => {
   }
 });
 
-// 🔴 NEW: Store active users (employeeId -> socketId mapping)
+// 🔴 Store active users (employeeId -> socketId mapping)
 const activeUsers = new Map();
 
-// -------------------- SOCKET.IO (ONE-TO-ONE + GROUP CALLS) -------------------- //
+// -------------------- SOCKET.IO (WEBRTC SIGNALING) -------------------- //
 io.on("connection", (socket) => {
   console.log("🟢 User connected:", socket.id);
 
   // --- Basic Join ---
   socket.on("join", (employeeId) => {
     socket.join(employeeId);
-    // 🔴 NEW: Store user mapping for WebRTC signaling
     activeUsers.set(employeeId, socket.id);
     console.log(`👤 ${employeeId} joined personal room`);
   });
@@ -209,25 +207,33 @@ io.on("connection", (socket) => {
     }
   });
 
+  // 🔴 FIXED: Prevent multiple call-ended events
   socket.on("end-call", (data) => {
     const { to, from } = data;
-    if (to) {
-      io.to(to).emit("call-ended", { from });
-      console.log(`❌ Call ended between ${from} and ${to}`);
+    console.log(`❌ Call ended between ${from} and ${to}`);
+    
+    const targetSocketId = activeUsers.get(to);
+    if (targetSocketId) {
+      // 🔴 FIX: Send only ONCE to target
+      io.to(targetSocketId).emit("call-ended", { from });
     }
   });
 
-  // --- ICE Relay ---
+  // 🔴 FIXED: ICE Candidate Relay with better error handling
   socket.on("ice-candidate", (data) => {
     const { to, candidate } = data;
     if (to && candidate) {
-      io.to(to).emit("ice-candidate", { candidate });
-      // 🔴 NEW: Added logging
-      console.log(`🧊 ICE candidate relayed to ${to}`);
+      const targetSocketId = activeUsers.get(to);
+      if (targetSocketId) {
+        io.to(targetSocketId).emit("ice-candidate", { candidate });
+        console.log(`🧊 ICE candidate relayed to ${to}`);
+      } else {
+        console.log(`⚠ Cannot relay ICE, ${to} not online`);
+      }
     }
   });
 
-  // 🔴 NEW: WebRTC Offer Handler - CRITICAL FOR LAPTOP-TO-LAPTOP
+  // 🔴 WebRTC Offer Handler
   socket.on("offer", (data) => {
     const { to, from, offer, roomId } = data;
     console.log(`📤 Offer sent: ${from} -> ${to}`);
@@ -246,7 +252,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  // 🔴 NEW: WebRTC Answer Handler - CRITICAL FOR LAPTOP-TO-LAPTOP
+  // 🔴 WebRTC Answer Handler
   socket.on("answer", (data) => {
     const { to, from, answer, roomId } = data;
     console.log(`📤 Answer sent: ${from} -> ${to}`);
@@ -264,7 +270,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  // 🔴 NEW: Call Acceptance Handler (for proper signaling flow)
+  // 🔴 Call Acceptance Handler (for proper signaling flow)
   socket.on("call-accepted", (data) => {
     const { to, from, roomId } = data;
     console.log(`✅ Call accepted: ${from} -> ${to}`);
@@ -275,22 +281,22 @@ io.on("connection", (socket) => {
     }
   });
 
-  // 🔴 NEW: Handle call accepted notification
-socket.on("call-accepted-by-receiver", (data) => {
-  const { to, from, isVideo } = data;
-  console.log(`✅ Call accepted by ${from}, notifying ${to}`);
-  
-  const targetSocketId = activeUsers.get(to);
-  if (targetSocketId) {
-    io.to(targetSocketId).emit("call-accepted-by-receiver", {
-      from,
-      isVideo: isVideo !== false
-    });
-    console.log(`📢 Acceptance notification sent to ${to}`);
-  }
-});
+  // 🔴 NEW: Handle call accepted notification (NO MEDIA YET)
+  socket.on("call-accepted-by-receiver", (data) => {
+    const { to, from, isVideo } = data;
+    console.log(`✅ Call accepted by ${from}, notifying ${to} to start media`);
+    
+    const targetSocketId = activeUsers.get(to);
+    if (targetSocketId) {
+      io.to(targetSocketId).emit("call-accepted-by-receiver", {
+        from,
+        isVideo: isVideo !== false
+      });
+      console.log(`📢 Acceptance notification sent to ${to}`);
+    }
+  });
 
-  // 🔴 NEW: Improved Call Initiation (better than existing call-user)
+  // 🔴 Improved Call Initiation
   socket.on("initiate-call", (data) => {
     const { to, from, roomId, callerName, isVideo } = data;
     console.log(`📞 Call initiated: ${from} -> ${to}, Room: ${roomId}`);
@@ -351,7 +357,7 @@ socket.on("call-accepted-by-receiver", (data) => {
 
   // --- Disconnect ---
   socket.on("disconnect", () => {
-    // 🔴 NEW: Remove user from active users map
+    // Remove user from active users map
     for (const [userId, socketId] of activeUsers.entries()) {
       if (socketId === socket.id) {
         activeUsers.delete(userId);
@@ -359,7 +365,6 @@ socket.on("call-accepted-by-receiver", (data) => {
         break;
       }
     }
-    console.log("🔴 User disconnected:", socket.id);
   });
 });
 
@@ -372,6 +377,6 @@ app.get('/', (req, res) => {
 mongoose.connect(MONGO_URI)
   .then(() => {
     console.log('✅ MongoDB connected');
-    server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+    server.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server running on port ${PORT}`));
   })
   .catch(err => console.error('❌ MongoDB connection error:', err));
