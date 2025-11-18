@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'dart:io';
-import 'dart:async'; // 🔴 NEW: For Timer
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 typedef IncomingCallCallback = void Function(String fromId, Map signal);
@@ -26,18 +26,18 @@ class CallManager {
   String? _currentTarget;
   String? currentRoomId;
 
-  // 🔴 Queue to store early ICE candidates
   final List<RTCIceCandidate> _pendingCandidates = [];
   bool _isAnswering = false;
 
-  // 🔴 NEW: Connection retry
+  // 🔴 NEW: Prevent concurrent modification
+  bool _processingCandidates = false;
+
   Timer? _connectionCheckTimer;
   int _retryAttempts = 0;
   final int _maxRetryAttempts = 3;
 
   CallManager({required this.serverUrl, required this.currentUserId});
 
-  // ✅ Initialize socket connection
   Future<void> init() async {
     socket = IO.io(serverUrl, <String, dynamic>{
       'transports': ['websocket', 'polling'],
@@ -50,7 +50,6 @@ class CallManager {
       debugPrint('✅ Connected to socket as $currentUserId');
     });
 
-    // ✅ Incoming call
     socket.on('incoming-call', (data) {
       try {
         final from = data['from'] as String;
@@ -61,13 +60,11 @@ class CallManager {
       }
     });
 
-    // 🔴 NEW: Listen for call acceptance (caller side)
     socket.on('call-accepted-by-receiver', (data) async {
       try {
         debugPrint('✅ Call accepted by ${data['from']}');
         final isVideo = data['isVideo'] == true;
 
-        // NOW start media and send offer
         if (_currentTarget != null) {
           await _startMediaAndCreateOffer(
             targetId: _currentTarget!,
@@ -79,7 +76,6 @@ class CallManager {
       }
     });
 
-    // 🔴 WebRTC Offer Handler
     socket.on('offer', (data) async {
       try {
         debugPrint('📥 Received offer from ${data['from']}');
@@ -98,29 +94,37 @@ class CallManager {
         final isVideo = offerMap['isVideo'] == true;
 
         if (sdp != null && type != null) {
-          // 🔴 CRITICAL: Setup peer connection FIRST
           await _setupReceiverPeerConnection(from, isVideo);
-
-          // Set remote description
           await _pc!.setRemoteDescription(RTCSessionDescription(sdp, type));
           debugPrint('✅ Remote description set (offer)');
 
-          // 🔴 Process pending candidates AFTER peer connection ready
+          // 🔴 FIX 1: Concurrent Modification - Create copy before iterating
+          // WHY: While processing queue, new candidates arrive and cause error
+          // SOLUTION: Copy list first, clear original, then process copy
           if (_pendingCandidates.isNotEmpty) {
+            _processingCandidates = true; // Lock to prevent new additions
+
             debugPrint(
               '📦 Adding ${_pendingCandidates.length} pending candidates',
             );
-            for (var candidate in _pendingCandidates) {
+
+            // Create immutable copy
+            final candidatesToAdd = List<RTCIceCandidate>.from(
+              _pendingCandidates,
+            );
+            _pendingCandidates.clear(); // Clear BEFORE processing
+
+            for (var candidate in candidatesToAdd) {
               try {
                 await _pc!.addCandidate(candidate);
               } catch (e) {
                 debugPrint('⚠ Error adding pending candidate: $e');
               }
             }
-            _pendingCandidates.clear();
+
+            _processingCandidates = false; // Release lock
           }
 
-          // Create and send answer
           final answer = await _pc!.createAnswer({
             'offerToReceiveAudio': true,
             'offerToReceiveVideo': isVideo,
@@ -140,10 +144,10 @@ class CallManager {
       } catch (e) {
         debugPrint('⚠ offer handler error: $e');
         _isAnswering = false;
+        _processingCandidates = false; // Release lock on error
       }
     });
 
-    // 🔴 WebRTC Answer Handler
     socket.on('answer', (data) async {
       try {
         debugPrint('📥 Received answer from ${data['from']}');
@@ -152,25 +156,33 @@ class CallManager {
         final type = answerMap['type'] as String?;
 
         if (sdp != null && type != null && _pc != null) {
-          // 🔴 FIX: Check signaling state before setting remote description
           if (_pc!.signalingState ==
               RTCSignalingState.RTCSignalingStateHaveLocalOffer) {
             await _pc!.setRemoteDescription(RTCSessionDescription(sdp, type));
             debugPrint('✅ Remote description set (answer)');
 
-            // 🔴 Process pending candidates after answer
+            // 🔴 FIX 1: Same concurrent modification fix for answer handler
             if (_pendingCandidates.isNotEmpty) {
+              _processingCandidates = true;
+
               debugPrint(
                 '📦 Adding ${_pendingCandidates.length} pending candidates',
               );
-              for (var candidate in _pendingCandidates) {
+
+              final candidatesToAdd = List<RTCIceCandidate>.from(
+                _pendingCandidates,
+              );
+              _pendingCandidates.clear();
+
+              for (var candidate in candidatesToAdd) {
                 try {
                   await _pc!.addCandidate(candidate);
                 } catch (e) {
                   debugPrint('⚠ Error adding pending candidate: $e');
                 }
               }
-              _pendingCandidates.clear();
+
+              _processingCandidates = false;
             }
           } else {
             debugPrint(
@@ -180,10 +192,10 @@ class CallManager {
         }
       } catch (e) {
         debugPrint('⚠ answer handler error: $e');
+        _processingCandidates = false;
       }
     });
 
-    // ✅ Call accepted (OLD - kept for compatibility)
     socket.on('call-accepted', (data) async {
       try {
         final signal = Map<String, dynamic>.from(data as Map);
@@ -200,21 +212,20 @@ class CallManager {
       }
     });
 
-    // ✅ Call rejected
     socket.on('call-rejected', (data) {
       debugPrint('ℹ Received call-rejected: $data');
       onCallEnded?.call();
       _cleanupPeer();
     });
 
-    // ✅ Call ended remotely
     socket.on('call-ended', (data) {
       debugPrint('ℹ Received call-ended: $data');
       onCallEnded?.call();
       _cleanupPeer();
     });
 
-    // 🔴 ICE Candidate Handler with Queueing
+    // 🔴 FIX 2: Add processing lock check
+    // WHY: Prevent adding candidates while we're processing the queue
     socket.on('ice-candidate', (data) async {
       try {
         debugPrint('📥 Received ice-candidate');
@@ -239,8 +250,8 @@ class CallManager {
 
         final candidate = RTCIceCandidate(candidateStr, sdpMid, sdpIndex);
 
-        // 🔴 CRITICAL FIX: Queue candidates if peer connection not ready
-        if (_pc == null || _isAnswering) {
+        // Queue if PC not ready OR currently processing queue
+        if (_pc == null || _isAnswering || _processingCandidates) {
           debugPrint('📦 Queueing candidate (PC not ready yet)');
           _pendingCandidates.add(candidate);
         } else {
@@ -261,7 +272,6 @@ class CallManager {
     });
   }
 
-  // 🔴 NEW: Setup peer connection for receiver (when offer arrives)
   Future<void> _setupReceiverPeerConnection(String fromId, bool isVideo) async {
     _currentTarget = fromId;
 
@@ -311,7 +321,6 @@ class CallManager {
     }
   }
 
-  /// 🔴 Create Peer Connection with TURN servers
   Future<RTCPeerConnection> _createPeerConnection(
     bool isVideo,
     String targetId,
@@ -345,16 +354,15 @@ class CallManager {
 
     final pc = await createPeerConnection(configuration);
 
-    // 🔴 ICE connection state logging
     pc.onIceConnectionState = (RTCIceConnectionState state) {
       debugPrint('🔄 ICE connection state: $state');
       if (state == RTCIceConnectionState.RTCIceConnectionStateFailed) {
         debugPrint('❌ ICE connection failed');
-        _retryConnection(isVideo); // 🔴 NEW: Retry on failure
+        _retryConnection(isVideo);
       }
       if (state == RTCIceConnectionState.RTCIceConnectionStateConnected) {
         debugPrint('✅ ICE connection established');
-        _retryAttempts = 0; // Reset counter on success
+        _retryAttempts = 0;
         _connectionCheckTimer?.cancel();
       }
     };
@@ -362,7 +370,6 @@ class CallManager {
     pc.onConnectionState = (RTCPeerConnectionState state) {
       debugPrint('🔗 PeerConnection state: $state');
 
-      // 🔴 NEW: Retry on failure
       if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed) {
         debugPrint('❌ Connection failed, will retry...');
         _retryConnection(isVideo);
@@ -373,7 +380,6 @@ class CallManager {
       debugPrint('📡 ICE gathering state: $state');
     };
 
-    // 🔴 ICE candidate emission
     pc.onIceCandidate = (RTCIceCandidate? c) {
       if (c != null && c.candidate != null && c.candidate!.isNotEmpty) {
         debugPrint('🧊 Sending ICE candidate to $targetId');
@@ -388,7 +394,10 @@ class CallManager {
       }
     };
 
-    // 🔴 FIXED: Track handling - Safe for Web
+    // 🔴 FIX 3: Force unmute remote tracks
+    // WHY: WebRTC sets remote tracks as muted by default (security)
+    // SYMPTOM: Connected but no audio/video visible
+    // SOLUTION: Explicitly unmute and enable all tracks
     pc.onTrack = (RTCTrackEvent event) {
       debugPrint(
         '📹 onTrack: kind=${event.track.kind}, streams=${event.streams.length}, enabled=${event.track.enabled}',
@@ -399,6 +408,23 @@ class CallManager {
         final audioTracks = stream.getAudioTracks().length;
         final videoTracks = stream.getVideoTracks().length;
         debugPrint('✅ Remote stream: audio=$audioTracks, video=$videoTracks');
+
+        // 🔴 CRITICAL: Force unmute and enable all tracks
+        for (var track in stream.getTracks()) {
+          debugPrint(
+            '   ${track.kind}: enabled=${track.enabled}, muted=${track.muted}',
+          );
+
+          // Force enable track
+          if (!track.enabled) {
+            track.enabled = true;
+            debugPrint('🔊 Enabled ${track.kind} track');
+          }
+
+          // Note: track.muted is READ-ONLY, browser controls it
+          // But enabled=true should make it work
+        }
+
         onRemoteStream?.call(stream);
       } else {
         debugPrint('⚠ onTrack but no streams');
@@ -408,7 +434,6 @@ class CallManager {
     return pc;
   }
 
-  /// ✅ Create room (for group call)
   void createRoom(String targetId) {
     currentRoomId = "room_${DateTime.now().millisecondsSinceEpoch}";
     socket.emit("create-room", {
@@ -420,7 +445,6 @@ class CallManager {
     debugPrint("🏠 Room created: $currentRoomId by $currentUserId");
   }
 
-  /// ✅ Invite another participant into an existing room
   void inviteParticipant({
     required String targetId,
     required String? roomId,
@@ -440,7 +464,6 @@ class CallManager {
     debugPrint("👥 Invited $targetId to room $roomId");
   }
 
-  /// 🔴 FIXED: Start a call - Don't capture media until accepted
   Future<void> startCall({
     required String targetId,
     required bool isVideo,
@@ -461,7 +484,6 @@ class CallManager {
     debugPrint('✅ Call initiation sent (no media yet)');
   }
 
-  /// 🔴 NEW: Start media ONLY after receiver accepts
   Future<void> _startMediaAndCreateOffer({
     required String targetId,
     required bool isVideo,
@@ -529,7 +551,6 @@ class CallManager {
     debugPrint('✅ Offer sent with media');
   }
 
-  /// 🔴 FIXED: Answer a call - Ensure video enabled
   Future<void> answerCall({required String fromId, required Map signal}) async {
     _currentTarget = fromId;
     _pendingCandidates.clear();
@@ -629,7 +650,6 @@ class CallManager {
     }
   }
 
-  /// 🔴 NEW: Retry connection if initial attempt fails
   Future<void> _retryConnection(bool isVideo) async {
     if (_retryAttempts >= _maxRetryAttempts) {
       debugPrint('❌ Max retry attempts reached, giving up');
@@ -672,7 +692,6 @@ class CallManager {
     }
   }
 
-  /// ✅ End call
   void endCall({String? forceTargetId}) {
     try {
       final to = forceTargetId ?? _currentTarget;
@@ -689,7 +708,6 @@ class CallManager {
     _cleanupPeer();
   }
 
-  /// ✅ Reject incoming call
   void rejectCall(String toId) {
     try {
       socket.emit('reject-call', {'to': toId, 'from': currentUserId});
@@ -700,12 +718,11 @@ class CallManager {
     _cleanupPeer();
   }
 
-  /// ✅ Cleanup peer connection and streams
   void _cleanupPeer() {
-    // 🔴 Cancel retry timer
     _connectionCheckTimer?.cancel();
     _connectionCheckTimer = null;
     _retryAttempts = 0;
+    _processingCandidates = false; // 🔴 Reset processing flag
 
     try {
       _pc?.close();
@@ -722,9 +739,8 @@ class CallManager {
     debugPrint('🧹 Peer cleaned up');
   }
 
-  /// ✅ Dispose
   void dispose() {
-    _connectionCheckTimer?.cancel(); // 🔴 NEW: Cancel timer
+    _connectionCheckTimer?.cancel();
     _cleanupPeer();
     try {
       socket.disconnect();

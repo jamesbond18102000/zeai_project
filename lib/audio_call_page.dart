@@ -30,7 +30,8 @@ class _AudioCallPageState extends State<AudioCallPage> {
   bool _connected = false;
   bool _isMuted = false;
   bool _isSpeakerOn = false;
-  bool _isDisposing = false; // 🔴 NEW: Track disposal state
+  bool _isDisposing = false;
+  bool _callEnded = false; // 🔴 FIX: Prevent double end-call
 
   @override
   void initState() {
@@ -50,7 +51,6 @@ class _AudioCallPageState extends State<AudioCallPage> {
       currentUserId: widget.currentUserId,
     );
 
-    // 🔴 FIXED: Local preview with mounted check
     _callManager.onLocalStream = (stream) {
       if (!mounted || _isDisposing) return;
 
@@ -67,7 +67,6 @@ class _AudioCallPageState extends State<AudioCallPage> {
       });
     };
 
-    // 🔴 CRITICAL FIX: Remote stream with mounted check
     _callManager.onRemoteStream = (stream) {
       if (!mounted || _isDisposing) return;
 
@@ -206,16 +205,17 @@ class _AudioCallPageState extends State<AudioCallPage> {
 
   @override
   void dispose() {
-    _isDisposing = true; // 🔴 Set flag
+    _isDisposing = true;
 
-    // 🔴 CRITICAL FIX: Dispose in correct order with delays
-    try {
-      _callManager.endCall(forceTargetId: widget.targetUserId);
-    } catch (e) {
-      debugPrint('⚠ End call error: $e');
+    // 🔴 FIX: Only end call if not already ended (prevent double call)
+    if (!_callEnded) {
+      try {
+        _callManager.endCall(forceTargetId: widget.targetUserId);
+      } catch (e) {
+        debugPrint('⚠ End call error: $e');
+      }
     }
 
-    // 🔴 Clear renderers BEFORE disposing
     try {
       _remoteRenderer.srcObject = null;
       _localRenderer.srcObject = null;
@@ -253,7 +253,7 @@ class _AudioCallPageState extends State<AudioCallPage> {
                   ? Stack(
                       alignment: Alignment.center,
                       children: [
-                        // 🔴 Remote video (full screen)
+                        // Remote video (full screen)
                         Positioned.fill(
                           child: Container(
                             color: Colors.black,
@@ -266,7 +266,7 @@ class _AudioCallPageState extends State<AudioCallPage> {
                           ),
                         ),
 
-                        // 🔴 FIXED: Local video preview with null check
+                        // Local video preview with null check
                         if (_localRenderer.srcObject != null)
                           Positioned(
                             right: 16,
@@ -294,7 +294,7 @@ class _AudioCallPageState extends State<AudioCallPage> {
                             ),
                           ),
 
-                        // 🔴 NEW: Placeholder when no local stream
+                        // Placeholder when no local stream
                         if (_localRenderer.srcObject == null)
                           Positioned(
                             right: 16,
@@ -357,7 +357,7 @@ class _AudioCallPageState extends State<AudioCallPage> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  // 🎙 Mute / Unmute
+                  // Mute / Unmute
                   CircleAvatar(
                     backgroundColor: _isMuted ? Colors.orange : Colors.blue,
                     radius: 28,
@@ -370,7 +370,7 @@ class _AudioCallPageState extends State<AudioCallPage> {
                     ),
                   ),
 
-                  // 🔊 Speaker on/off
+                  // Speaker on/off
                   CircleAvatar(
                     backgroundColor: _isSpeakerOn ? Colors.green : Colors.grey,
                     radius: 28,
@@ -385,7 +385,7 @@ class _AudioCallPageState extends State<AudioCallPage> {
                     ),
                   ),
 
-                  // ➕ Add participant
+                  // Add participant
                   CircleAvatar(
                     backgroundColor: Colors.purple,
                     radius: 28,
@@ -395,19 +395,23 @@ class _AudioCallPageState extends State<AudioCallPage> {
                     ),
                   ),
 
-                  // 🚫 End Call
+                  // 🔴 FIX: End Call with double-call prevention
                   CircleAvatar(
                     backgroundColor: Colors.red,
                     radius: 28,
                     child: IconButton(
                       icon: const Icon(Icons.call_end, color: Colors.white),
                       onPressed: () {
-                        _callManager.endCall(
-                          forceTargetId: widget.targetUserId,
-                        );
-                        Navigator.of(
-                          context,
-                        ).popUntil((route) => route.isFirst);
+                        // Prevent double end-call
+                        if (!_callEnded) {
+                          _callEnded = true;
+                          _callManager.endCall(
+                            forceTargetId: widget.targetUserId,
+                          );
+                          Navigator.of(
+                            context,
+                          ).popUntil((route) => route.isFirst);
+                        }
                       },
                     ),
                   ),
