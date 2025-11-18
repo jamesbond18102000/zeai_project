@@ -41,7 +41,7 @@ app.use((req, res, next) => {
 
 // ✅ Enable CORS globally (for REST APIs)
 app.use(cors({
-  origin: ["https://hrm5.netlify.app"],
+  origin: ["https://hrm15.netlify.app"],
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   credentials: true,
 }));
@@ -49,7 +49,7 @@ app.use(cors({
 // ✅ Initialize Socket.IO with optimized settings
 const io = new Server(server, {
   cors: {
-    origin: ["https://hrm5.netlify.app"],
+    origin: ["https://hrm15.netlify.app"],
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,
   },
