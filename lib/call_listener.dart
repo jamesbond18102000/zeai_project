@@ -1,7 +1,6 @@
 // lib/call_listener.dart
 import 'package:flutter/material.dart';
 import 'call_manager.dart';
-//import 'call_popup.dart';
 import 'audio_call_page.dart';
 
 class CallListener extends StatefulWidget {
@@ -25,14 +24,16 @@ class _CallListenerState extends State<CallListener> {
   void initState() {
     super.initState();
     _callManager = CallManager(
-      serverUrl: 'https://zeai-project.onrender.com',
-
+      serverUrl: 'https://zeai-project.onrender.com', // Check URL
       currentUserId: widget.currentUserId,
     );
 
-    _callManager.onIncomingCall = (fromId, signal) {
-      final isVideo = signal['isVideo'] == true;
-      _showIncoming(fromId, isVideo, signal);
+    // 🔥 UPDATED: Callback now receives roomId directly
+    _callManager.onIncomingCall = (fromId, roomId, isVideo) {
+      // ❌ DELETED: Parsing 'signal' map is no longer needed
+      // final isVideo = signal['isVideo'] == true;
+
+      _showIncoming(fromId, roomId, isVideo);
     };
 
     _callManager.onCallEnded = () {
@@ -41,7 +42,7 @@ class _CallListenerState extends State<CallListener> {
       }
     };
 
-    _callManager.init();
+    _callManager.init(); // 🔥 UPDATED: init() handles Socket.IO setup
 
     _callManager.socket.on('call-ended', (data) {
       if (Navigator.canPop(context)) {
@@ -53,7 +54,8 @@ class _CallListenerState extends State<CallListener> {
     });
   }
 
-  void _showIncoming(String fromId, bool isVideo, Map signal) {
+  // 🔥 UPDATED: Accepts roomId
+  void _showIncoming(String fromId, String roomId, bool isVideo) {
     if (!mounted) return;
 
     Navigator.push(
@@ -95,6 +97,7 @@ class _CallListenerState extends State<CallListener> {
                       },
                     ),
                     const SizedBox(width: 20),
+
                     // ✅ Accept button
                     ElevatedButton.icon(
                       icon: const Icon(Icons.call),
@@ -104,6 +107,8 @@ class _CallListenerState extends State<CallListener> {
                       ),
                       onPressed: () {
                         Navigator.pop(context); // close popup
+
+                        // 🔥 UPDATED: Navigate to AudioCallPage with Room ID
                         Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -112,7 +117,8 @@ class _CallListenerState extends State<CallListener> {
                               targetUserId: fromId,
                               isCaller: false,
                               isVideo: isVideo,
-                              offerSignal: signal, // ✅ important
+                              // We pass roomId inside a map to match expected 'offerSignal' or you can update AudioCallPage constructor to take roomId directly
+                              offerSignal: {'roomId': roomId},
                             ),
                           ),
                         );

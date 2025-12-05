@@ -1,5 +1,7 @@
-import 'package:flutter/material.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:flutter/material.dart' hide ConnectionState;
+// FIX: Hide Flutter's ConnectionState to avoid conflict
+// ❌ DELETED: import 'package:flutter_webrtc/flutter_webrtc.dart'; // Removed WebRTC
+import 'package:livekit_client/livekit_client.dart'; // 🔥 ADDED: LiveKit Client
 import 'call_manager.dart';
 
 class AudioCallPage extends StatefulWidget {
@@ -7,7 +9,7 @@ class AudioCallPage extends StatefulWidget {
   final String targetUserId;
   final bool isCaller;
   final bool isVideo;
-  final Map? offerSignal;
+  final Map? offerSignal; // Receiver-ku ithula 'roomId' irukum
 
   const AudioCallPage({
     super.key,
@@ -24,82 +26,36 @@ class AudioCallPage extends StatefulWidget {
 
 class _AudioCallPageState extends State<AudioCallPage> {
   late CallManager _callManager;
-  final _remoteRenderer = RTCVideoRenderer();
-  final _localRenderer = RTCVideoRenderer();
 
-  bool _connected = false;
-  bool _isMuted = false;
-  bool _isSpeakerOn = false;
-  bool _isDisposing = false;
-  bool _callEnded = false; // 🔴 FIX: Prevent double end-call
+  // ❌ DELETED: RTCVideoRenderer _remoteRenderer, _localRenderer (Not needed for LiveKit)
+
+  // 🔥 ADDED: LiveKit State Variables
+  Room? _room;
+  EventsListener<RoomEvent>? _listener;
+  List<Participant> participants = [];
+  bool _isCallActive = true;
 
   @override
   void initState() {
     super.initState();
-    _initializeRenderers();
     _setupCallManager();
-  }
-
-  Future<void> _initializeRenderers() async {
-    await _remoteRenderer.initialize();
-    await _localRenderer.initialize();
   }
 
   void _setupCallManager() {
     _callManager = CallManager(
-      serverUrl: 'https://zeai-project.onrender.com',
+      serverUrl: 'https://zeai-project.onrender.com', // Unga backend URL
       currentUserId: widget.currentUserId,
     );
 
-    _callManager.onLocalStream = (stream) {
-      if (!mounted || _isDisposing) return;
+    _callManager.init();
 
-      setState(() {
-        if (widget.isVideo && _localRenderer.srcObject == null) {
-          _localRenderer.srcObject = stream;
-          debugPrint(
-            '📹 Local video set: ${stream.getVideoTracks().length} tracks',
-          );
-          debugPrint(
-            '🎧 Local audio set: ${stream.getAudioTracks().length} tracks',
-          );
-        }
-      });
-    };
-
-    _callManager.onRemoteStream = (stream) {
-      if (!mounted || _isDisposing) return;
-
-      setState(() {
-        _remoteRenderer.srcObject = stream;
-
-        final audioTracks = stream.getAudioTracks().length;
-        final videoTracks = stream.getVideoTracks().length;
-        debugPrint('🎧 Remote audio tracks: $audioTracks');
-        debugPrint('📹 Remote video tracks: $videoTracks');
-
-        for (var track in stream.getTracks()) {
-          debugPrint(
-            '   ${track.kind}: enabled=${track.enabled}, muted=${track.muted}',
-          );
-        }
-
-        _connected = true;
-      });
-    };
-
+    // Listen for End Call event from Remote User
     _callManager.onCallEnded = () {
-      if (!mounted || _isDisposing) return;
-
-      try {
-        Navigator.of(context).popUntil((route) => route.isFirst);
-      } catch (e) {
-        debugPrint('⚠ Navigation error: $e');
-        try {
-          Navigator.of(context).pop();
-        } catch (e2) {
-          debugPrint('⚠ Fallback navigation error: $e2');
-        }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Call ended by other user")),
+        );
+        Navigator.pop(context);
       }
     };
 
@@ -107,131 +63,106 @@ class _AudioCallPageState extends State<AudioCallPage> {
   }
 
   Future<void> _startCall() async {
-    await _callManager.init();
+    String roomId;
 
     if (widget.isCaller) {
-      await _callManager.startCall(
-        targetId: widget.targetUserId,
-        isVideo: widget.isVideo,
-      );
-    } else if (widget.offerSignal != null) {
-      await _callManager.answerCall(
-        fromId: widget.targetUserId,
-        signal: widget.offerSignal!,
-      );
+      // Caller: Puthu Room ID Create panrom (Unique ID)
+      roomId =
+          "${widget.currentUserId}_${DateTime.now().millisecondsSinceEpoch}";
+    } else {
+      // Receiver: Invitation-la irunthu Room ID Edukurom
+      roomId = widget.offerSignal?['roomId'] ?? "default_room";
     }
 
-    Future.delayed(const Duration(seconds: 1), () {
-      if (mounted && _callManager.localStream != null && !_isDisposing) {
-        setState(() {});
+    debugPrint("🚀 Joining LiveKit Room: $roomId");
+
+    // 🔥 ADDED: Join LiveKit Room via CallManager
+    final success = await _callManager.joinRoom(roomId, widget.isVideo);
+
+    if (success && _callManager.room != null) {
+      if (!mounted) return;
+
+      setState(() {
+        _room = _callManager.room;
+        _listener = _room!.createListener();
+        _updateParticipantList(); // Initial List
+      });
+
+      // 🔥 ADDED: Listeners for Participant Events (Join, Leave, Video On/Off)
+      _listener!
+        ..on<ParticipantConnectedEvent>((_) => _updateParticipantList())
+        ..on<ParticipantDisconnectedEvent>((_) => _updateParticipantList())
+        ..on<TrackSubscribedEvent>((_) => _updateParticipantList())
+        ..on<TrackUnsubscribedEvent>((_) => _updateParticipantList())
+        ..on<TrackMutedEvent>((_) => setState(() {})) // Mute icon update
+        ..on<TrackUnmutedEvent>((_) => setState(() {}));
+
+      // Signal the other user via Socket.IO
+      if (widget.isCaller) {
+        _callManager.startCall(widget.targetUserId, roomId, widget.isVideo);
+      } else {
+        _callManager.answerCall(widget.targetUserId, roomId);
       }
-    });
-  }
-
-  void _toggleMute() {
-    final stream = _callManager.localStream;
-    if (stream == null) {
-      debugPrint("⚠ Local stream not ready for mute toggle");
-      return;
-    }
-
-    for (var track in stream.getAudioTracks()) {
-      track.enabled = !track.enabled;
-    }
-
-    if (mounted) setState(() => _isMuted = !_isMuted);
-  }
-
-  Future<void> _toggleSpeaker() async {
-    try {
-      if (_callManager.localStream == null) {
-        debugPrint('⚠ No active audio stream to toggle speaker.');
-        return;
+    } else {
+      debugPrint("❌ Failed to join room");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Failed to connect to LiveKit server")),
+        );
+        Navigator.pop(context);
       }
-
-      await Helper.setSpeakerphoneOn(!_isSpeakerOn);
-      if (mounted) setState(() => _isSpeakerOn = !_isSpeakerOn);
-
-      debugPrint(
-        _isSpeakerOn ? '🔊 Speaker turned ON' : '🔈 Speaker turned OFF',
-      );
-    } catch (e) {
-      debugPrint("⚠ Speaker toggle error: $e");
     }
   }
 
-  void _inviteParticipant() async {
-    final TextEditingController userIdController = TextEditingController();
+  void _updateParticipantList() {
+    if (_room == null) return;
+    if (mounted) {
+      setState(() {
+        // Combine Local + Remote Participants into one list for the Grid
+        participants = [
+          _room!.localParticipant!,
+          ..._room!.remoteParticipants.values,
+        ];
+      });
+    }
+  }
 
-    await showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Add Participant"),
-        content: TextField(
-          controller: userIdController,
-          decoration: const InputDecoration(
-            labelText: "Enter user ID to invite",
-          ),
-        ),
-        actions: [
-          TextButton(
-            child: const Text("Cancel"),
-            onPressed: () => Navigator.pop(context),
-          ),
-          ElevatedButton(
-            child: const Text("Invite"),
-            onPressed: () {
-              final newUserId = userIdController.text.trim();
-              if (newUserId.isNotEmpty) {
-                _callManager.inviteParticipant(
-                  targetId: newUserId,
-                  roomId: _callManager.currentRoomId,
-                  isVideo: widget.isVideo,
-                );
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Invitation sent to $newUserId'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-              }
-              Navigator.pop(context);
-            },
-          ),
-        ],
-      ),
+  // Toggle Microphone
+  void _toggleMute() async {
+    if (_room?.localParticipant != null) {
+      final isEnabled = _room!.localParticipant!.isMicrophoneEnabled();
+      await _room!.localParticipant!.setMicrophoneEnabled(!isEnabled);
+      setState(() {});
+    }
+  }
+
+  // Toggle Camera
+  void _toggleCamera() async {
+    if (_room?.localParticipant != null) {
+      final isEnabled = _room!.localParticipant!.isCameraEnabled();
+      await _room!.localParticipant!.setCameraEnabled(!isEnabled);
+      setState(() {});
+    }
+  }
+
+  // Toggle Speaker (LiveKit handles audio routing usually, but we can force logic here if needed)
+  void _toggleSpeaker() {
+    // LiveKit usually manages this automatically on mobile.
+    // But you can use hardware plugins if needed.
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Speaker toggle managed by OS")),
     );
   }
 
   @override
   void dispose() {
-    _isDisposing = true;
+    _isCallActive = false;
+    _listener?.dispose();
 
-    // 🔴 FIX: Only end call if not already ended (prevent double call)
-    if (!_callEnded) {
-      try {
-        _callManager.endCall(forceTargetId: widget.targetUserId);
-      } catch (e) {
-        debugPrint('⚠ End call error: $e');
-      }
-    }
-
-    try {
-      _remoteRenderer.srcObject = null;
-      _localRenderer.srcObject = null;
-    } catch (e) {
-      debugPrint('⚠ Clear srcObject error: $e');
-    }
-
-    Future.delayed(const Duration(milliseconds: 200), () {
-      try {
-        _remoteRenderer.dispose();
-        _localRenderer.dispose();
-        _callManager.dispose();
-      } catch (e) {
-        debugPrint('⚠ Dispose error: $e');
-      }
-    });
+    // 🔥 ADDED: Proper Cleanup
+    // End call signal sending
+    _callManager.endCall(widget.targetUserId);
+    _callManager.dispose();
 
     super.dispose();
   }
@@ -240,109 +171,55 @@ class _AudioCallPageState extends State<AudioCallPage> {
   Widget build(BuildContext context) {
     final title = widget.isVideo ? 'Video Call' : 'Audio Call';
 
+    // Determine connection status
+    final isConnected =
+        _room != null && _room!.connectionState == ConnectionState.connected;
+
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(title: Text(title), backgroundColor: Colors.deepPurple),
       body: SafeArea(
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            /// --- VIDEO OR AUDIO AREA --- ///
+            /// --- 🔥 ADDED: VIDEO GRID AREA --- ///
             Expanded(
-              child: widget.isVideo
-                  ? Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        // Remote video (full screen)
-                        Positioned.fill(
-                          child: Container(
-                            color: Colors.black,
-                            child: RTCVideoView(
-                              _remoteRenderer,
-                              mirror: false,
-                              objectFit: RTCVideoViewObjectFit
-                                  .RTCVideoViewObjectFitCover,
-                            ),
+              child: !isConnected
+                  ? const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircularProgressIndicator(color: Colors.deepPurple),
+                          SizedBox(height: 20),
+                          Text(
+                            "Connecting to LiveKit...",
+                            style: TextStyle(color: Colors.white),
                           ),
-                        ),
-
-                        // Local video preview with null check
-                        if (_localRenderer.srcObject != null)
-                          Positioned(
-                            right: 16,
-                            top: 16,
-                            child: Container(
-                              width: 120,
-                              height: 160,
-                              decoration: BoxDecoration(
-                                border: Border.all(
-                                  color: Colors.white,
-                                  width: 2,
-                                ),
-                                borderRadius: BorderRadius.circular(12),
-                                color: Colors.black26,
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(10),
-                                child: RTCVideoView(
-                                  _localRenderer,
-                                  mirror: true,
-                                  objectFit: RTCVideoViewObjectFit
-                                      .RTCVideoViewObjectFitCover,
-                                ),
-                              ),
-                            ),
-                          ),
-
-                        // Placeholder when no local stream
-                        if (_localRenderer.srcObject == null)
-                          Positioned(
-                            right: 16,
-                            top: 16,
-                            child: Container(
-                              width: 120,
-                              height: 160,
-                              decoration: BoxDecoration(
-                                border: Border.all(
-                                  color: Colors.white,
-                                  width: 2,
-                                ),
-                                borderRadius: BorderRadius.circular(12),
-                                color: Colors.black54,
-                              ),
-                              child: const Center(
-                                child: Icon(
-                                  Icons.videocam_off,
-                                  color: Colors.white54,
-                                  size: 40,
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    )
-                  : Center(
-                      child: Icon(
-                        _connected ? Icons.headset : Icons.call,
-                        size: 120,
-                        color: _connected
-                            ? Colors.greenAccent
-                            : Colors.deepPurple,
+                        ],
                       ),
+                    )
+                  : participants.isEmpty
+                  ? const Center(
+                      child: Text(
+                        "Waiting for others...",
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    )
+                  : GridView.builder(
+                      padding: const EdgeInsets.all(8),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2, // 2 Columns
+                            crossAxisSpacing: 8,
+                            mainAxisSpacing: 8,
+                            childAspectRatio: 0.8,
+                          ),
+                      itemCount: participants.length,
+                      itemBuilder: (context, index) {
+                        return ParticipantWidget(
+                          participant: participants[index],
+                        );
+                      },
                     ),
-            ),
-
-            /// --- STATUS TEXT --- ///
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
-              child: Text(
-                widget.isCaller
-                    ? 'Calling ${widget.targetUserId}...'
-                    : _connected
-                    ? 'Connected'
-                    : 'Connecting...',
-                style: const TextStyle(color: Colors.white, fontSize: 18),
-              ),
             ),
 
             /// --- CONTROL BUTTONS --- ///
@@ -357,62 +234,55 @@ class _AudioCallPageState extends State<AudioCallPage> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  // Mute / Unmute
+                  // Mic Toggle
                   CircleAvatar(
-                    backgroundColor: _isMuted ? Colors.orange : Colors.blue,
+                    backgroundColor:
+                        (_room?.localParticipant?.isMicrophoneEnabled() ??
+                            false)
+                        ? Colors.blue
+                        : Colors.orange,
                     radius: 28,
                     child: IconButton(
                       icon: Icon(
-                        _isMuted ? Icons.mic_off : Icons.mic,
+                        (_room?.localParticipant?.isMicrophoneEnabled() ??
+                                false)
+                            ? Icons.mic
+                            : Icons.mic_off,
                         color: Colors.white,
                       ),
                       onPressed: _toggleMute,
                     ),
                   ),
 
-                  // Speaker on/off
+                  // End Call
                   CircleAvatar(
-                    backgroundColor: _isSpeakerOn ? Colors.green : Colors.grey,
+                    backgroundColor: Colors.red,
+                    radius: 32,
+                    child: IconButton(
+                      icon: const Icon(
+                        Icons.call_end,
+                        color: Colors.white,
+                        size: 30,
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ),
+
+                  // Video Toggle
+                  CircleAvatar(
+                    backgroundColor:
+                        (_room?.localParticipant?.isCameraEnabled() ?? false)
+                        ? Colors.blue
+                        : Colors.grey,
                     radius: 28,
                     child: IconButton(
                       icon: Icon(
-                        _isSpeakerOn
-                            ? Icons.volume_up
-                            : Icons.volume_down_outlined,
+                        (_room?.localParticipant?.isCameraEnabled() ?? false)
+                            ? Icons.videocam
+                            : Icons.videocam_off,
                         color: Colors.white,
                       ),
-                      onPressed: _toggleSpeaker,
-                    ),
-                  ),
-
-                  // Add participant
-                  CircleAvatar(
-                    backgroundColor: Colors.purple,
-                    radius: 28,
-                    child: IconButton(
-                      icon: const Icon(Icons.person_add, color: Colors.white),
-                      onPressed: _inviteParticipant,
-                    ),
-                  ),
-
-                  // 🔴 FIX: End Call with double-call prevention
-                  CircleAvatar(
-                    backgroundColor: Colors.red,
-                    radius: 28,
-                    child: IconButton(
-                      icon: const Icon(Icons.call_end, color: Colors.white),
-                      onPressed: () {
-                        // Prevent double end-call
-                        if (!_callEnded) {
-                          _callEnded = true;
-                          _callManager.endCall(
-                            forceTargetId: widget.targetUserId,
-                          );
-                          Navigator.of(
-                            context,
-                          ).popUntil((route) => route.isFirst);
-                        }
-                      },
+                      onPressed: _toggleCamera,
                     ),
                   ),
                 ],
@@ -420,6 +290,88 @@ class _AudioCallPageState extends State<AudioCallPage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// 🔥 ADDED: Helper Widget to Render Individual Participant
+class ParticipantWidget extends StatelessWidget {
+  final Participant participant;
+
+  const ParticipantWidget({super.key, required this.participant});
+
+  @override
+  Widget build(BuildContext context) {
+    // 🔥 FIX: Use videoTrackPublications instead of videoTracks
+    // Also handle potential nulls safely
+    // Get Video Track if available
+
+    VideoTrack? videoTrack;
+    if (participant.videoTrackPublications.isNotEmpty) {
+      videoTrack =
+          participant.videoTrackPublications.first.track as VideoTrack?;
+    }
+
+    //final videoTrack =
+    //  participant.videoTracks.firstOrNull?.track as VideoTrack?;
+    final isMuted = !participant.isMicrophoneEnabled();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey[900],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white24),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          // Video Layer
+          videoTrack != null
+              ? VideoTrackRenderer(videoTrack) // 🔥 LiveKit Video Renderer
+              : Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.person, size: 60, color: Colors.white54),
+                      const SizedBox(height: 8),
+                      Text(
+                        participant.identity ?? "User",
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                    ],
+                  ),
+                ),
+
+          // Mute Indicator
+          if (isMuted)
+            const Positioned(
+              top: 8,
+              right: 8,
+              child: CircleAvatar(
+                radius: 12,
+                backgroundColor: Colors.red,
+                child: Icon(Icons.mic_off, size: 14, color: Colors.white),
+              ),
+            ),
+
+          // Name Label
+          Positioned(
+            bottom: 8,
+            left: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                participant.identity ?? "Unknown",
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -6,6 +6,8 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
 const { Server } = require("socket.io");
+// 🔥 LIVEKIT CODE START: Import SDK
+const {AccessToken} = require('livekit-server-sdk');
 
 // ---------------- MODELS ---------------- //
 const Employee = require('./models/employee');
@@ -30,6 +32,8 @@ const payslipRoutes = require('./routes/payslip');
 // ---------------- EXPRESS APP SETUP ---------------- //
 const app = express();
 const PORT = process.env.PORT || 5000;
+//const PORT =5000;
+//const MONGO_URI = 'mongodb://localhost:27017/Dashboard_Db';
 const MONGO_URI = process.env.MONGO_URI;
 const server = http.createServer(app);
 
@@ -77,6 +81,34 @@ app.use('/notifications', notificationRoutes);
 app.use('/requests', requestsRoutes);
 app.use('/upload', uploadRoutes);
 app.use('/payslip', payslipRoutes);
+
+
+// 🔥 LIVEKIT CODE START: Token Generation Endpoint
+// Flutter App intha URL-a call panni Token vaangum
+app.get('/livekit/token', async (req, res) => {
+  try {
+    const { roomName, participantName } = req.query;
+    if (!roomName || !participantName) {
+      return res.status(400).json({ error: 'Missing roomName or participantName' });
+    }
+    // Replace with your API Key & Secret from LiveKit Dashboard
+    const apiKey = process.env.LIVEKIT_API_KEY || 'APIx2XPm36vxync';
+    const apiSecret = process.env.LIVEKIT_API_SECRET || 'HryVfNbXeXyD0VwVeLee0ysEygaZuSZerfD8djEwrJAU';
+    const at = new AccessToken(apiKey, apiSecret, {
+      identity: participantName,
+    });
+    at.addGrant({ roomJoin: true, room: roomName });
+    const token = await at.toJwt();
+    console.log(`🔑 Token generated for ${participantName} in room ${roomName}`);
+    
+    res.json({ token });
+  } catch (error) {
+    console.error('Error generating token:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+// 🔥 LIVEKIT CODE END
+
 
 // ---------------- PAYSLIP APIs ---------------- //
 app.get('/get-payslip-details', async (req, res) => {
@@ -176,7 +208,7 @@ app.get('/get-employee-name/:employeeId', async (req, res) => {
 // 🔴 Store active users (employeeId -> socketId mapping)
 const activeUsers = new Map();
 
-// -------------------- SOCKET.IO (WEBRTC SIGNALING) -------------------- //
+// -------------------- SOCKET.IO (SIGNALING FOR NOTIFICATIONS ONLY) -------------------- //- //
 io.on("connection", (socket) => {
   console.log("🟢 User connected:", socket.id);
 
@@ -187,116 +219,119 @@ io.on("connection", (socket) => {
     console.log(`👤 ${employeeId} joined personal room`);
   });
 
-  // --- Direct Calls ---
-  socket.on("call-user", (data) => {
-    io.to(data.target).emit("incoming-call", {
-      from: data.from,
-      signal: data.signal,
-    });
-  });
+  // // --- Direct Calls ---
+  // socket.on("call-user", (data) => {
+  //   io.to(data.target).emit("incoming-call", {
+  //     from: data.from,
+  //     signal: data.signal,
+  //   });
+  // });
 
-  socket.on("answer-call", (data) => {
-    io.to(data.to).emit("call-accepted", data.signal);
-  });
+  // socket.on("answer-call", (data) => {
+  //   io.to(data.to).emit("call-accepted", data.signal);
+  // });
 
-  socket.on("reject-call", (data) => {
-    const { to, from } = data;
-    if (to) {
-      io.to(to).emit("call-rejected", { from });
-      console.log(`📞 Call rejected by ${from}`);
-    }
-  });
+  // socket.on("reject-call", (data) => {
+  //   const { to, from } = data;
+  //   if (to) {
+  //     io.to(to).emit("call-rejected", { from });
+  //     console.log(`📞 Call rejected by ${from}`);
+  //   }
+  // });
 
-  // 🔴 FIXED: Prevent multiple call-ended events
-  socket.on("end-call", (data) => {
-    const { to, from } = data;
-    console.log(`❌ Call ended between ${from} and ${to}`);
+  // // 🔴 FIXED: Prevent multiple call-ended events
+  // socket.on("end-call", (data) => {
+  //   const { to, from } = data;
+  //   console.log(`❌ Call ended between ${from} and ${to}`);
     
-    const targetSocketId = activeUsers.get(to);
-    if (targetSocketId) {
-      // 🔴 FIX: Send only ONCE to target
-      io.to(targetSocketId).emit("call-ended", { from });
-    }
-  });
+  //   const targetSocketId = activeUsers.get(to);
+  //   if (targetSocketId) {
+  //     // 🔴 FIX: Send only ONCE to target
+  //     io.to(targetSocketId).emit("call-ended", { from });
+  //   }
+  // });
 
-  // 🔴 FIXED: ICE Candidate Relay with better error handling
-  socket.on("ice-candidate", (data) => {
-    const { to, candidate } = data;
-    if (to && candidate) {
-      const targetSocketId = activeUsers.get(to);
-      if (targetSocketId) {
-        io.to(targetSocketId).emit("ice-candidate", { candidate });
-        console.log(`🧊 ICE candidate relayed to ${to}`);
-      } else {
-        console.log(`⚠ Cannot relay ICE, ${to} not online`);
-      }
-    }
-  });
+  // // 🔴 FIXED: ICE Candidate Relay with better error handling
+  // socket.on("ice-candidate", (data) => {
+  //   const { to, candidate } = data;
+  //   if (to && candidate) {
+  //     const targetSocketId = activeUsers.get(to);
+  //     if (targetSocketId) {
+  //       io.to(targetSocketId).emit("ice-candidate", { candidate });
+  //       console.log(`🧊 ICE candidate relayed to ${to}`);
+  //     } else {
+  //       console.log(`⚠ Cannot relay ICE, ${to} not online`);
+  //     }
+  //   }
+  // });
 
-  // 🔴 WebRTC Offer Handler
-  socket.on("offer", (data) => {
-    const { to, from, offer, roomId } = data;
-    console.log(`📤 Offer sent: ${from} -> ${to}`);
+  // // 🔴 WebRTC Offer Handler
+  // socket.on("offer", (data) => {
+  //   const { to, from, offer, roomId } = data;
+  //   console.log(`📤 Offer sent: ${from} -> ${to}`);
     
-    const targetSocketId = activeUsers.get(to);
-    if (targetSocketId) {
-      io.to(targetSocketId).emit("offer", {
-        from,
-        offer,
-        roomId
-      });
-      console.log(`✅ Offer delivered to ${to}`);
-    } else {
-      console.log(`❌ Cannot send offer, ${to} not found`);
-      socket.emit("user-offline", { userId: to });
-    }
-  });
+  //   const targetSocketId = activeUsers.get(to);
+  //   if (targetSocketId) {
+  //     io.to(targetSocketId).emit("offer", {
+  //       from,
+  //       offer,
+  //       roomId
+  //     });
+  //     console.log(`✅ Offer delivered to ${to}`);
+  //   } else {
+  //     console.log(`❌ Cannot send offer, ${to} not found`);
+  //     socket.emit("user-offline", { userId: to });
+  //   }
+  // });
 
-  // 🔴 WebRTC Answer Handler
-  socket.on("answer", (data) => {
-    const { to, from, answer, roomId } = data;
-    console.log(`📤 Answer sent: ${from} -> ${to}`);
+  // // 🔴 WebRTC Answer Handler
+  // socket.on("answer", (data) => {
+  //   const { to, from, answer, roomId } = data;
+  //   console.log(`📤 Answer sent: ${from} -> ${to}`);
     
-    const targetSocketId = activeUsers.get(to);
-    if (targetSocketId) {
-      io.to(targetSocketId).emit("answer", {
-        from,
-        answer,
-        roomId
-      });
-      console.log(`✅ Answer delivered to ${to}`);
-    } else {
-      console.log(`❌ Cannot send answer, ${to} not found`);
-    }
-  });
+  //   const targetSocketId = activeUsers.get(to);
+  //   if (targetSocketId) {
+  //     io.to(targetSocketId).emit("answer", {
+  //       from,
+  //       answer,
+  //       roomId
+  //     });
+  //     console.log(`✅ Answer delivered to ${to}`);
+  //   } else {
+  //     console.log(`❌ Cannot send answer, ${to} not found`);
+  //   }
+  // });
 
-  // 🔴 Call Acceptance Handler (for proper signaling flow)
-  socket.on("call-accepted", (data) => {
-    const { to, from, roomId } = data;
-    console.log(`✅ Call accepted: ${from} -> ${to}`);
+  // // 🔴 Call Acceptance Handler (for proper signaling flow)
+  // socket.on("call-accepted", (data) => {
+  //   const { to, from, roomId } = data;
+  //   console.log(`✅ Call accepted: ${from} -> ${to}`);
     
-    const targetSocketId = activeUsers.get(to);
-    if (targetSocketId) {
-      io.to(targetSocketId).emit("call-accepted", { from, roomId });
-    }
-  });
+  //   const targetSocketId = activeUsers.get(to);
+  //   if (targetSocketId) {
+  //     io.to(targetSocketId).emit("call-accepted", { from, roomId });
+  //   }
+  // });
 
-  // 🔴 NEW: Handle call accepted notification (NO MEDIA YET)
-  socket.on("call-accepted-by-receiver", (data) => {
-    const { to, from, isVideo } = data;
-    console.log(`✅ Call accepted by ${from}, notifying ${to} to start media`);
+  // // 🔴 NEW: Handle call accepted notification (NO MEDIA YET)
+  // socket.on("call-accepted-by-receiver", (data) => {
+  //   const { to, from, isVideo } = data;
+  //   console.log(`✅ Call accepted by ${from}, notifying ${to} to start media`);
     
-    const targetSocketId = activeUsers.get(to);
-    if (targetSocketId) {
-      io.to(targetSocketId).emit("call-accepted-by-receiver", {
-        from,
-        isVideo: isVideo !== false
-      });
-      console.log(`📢 Acceptance notification sent to ${to}`);
-    }
-  });
+  //   const targetSocketId = activeUsers.get(to);
+  //   if (targetSocketId) {
+  //     io.to(targetSocketId).emit("call-accepted-by-receiver", {
+  //       from,
+  //       isVideo: isVideo !== false
+  //     });
+  //     console.log(`📢 Acceptance notification sent to ${to}`);
+  //   }
+  // });
 
   // 🔴 Improved Call Initiation
+   // 🔥 LIVEKIT CODE START: Simplified Call Logic (Notification Only)
+  
+  // 1. Call Initiate pannumbothu Receiver-ku solrom
   socket.on("initiate-call", (data) => {
     const { to, from, roomId, callerName, isVideo } = data;
     console.log(`📞 Call initiated: ${from} -> ${to}, Room: ${roomId}`);
@@ -316,44 +351,77 @@ io.on("connection", (socket) => {
     }
   });
 
+
+  // 2. Receiver Accept pannathum Caller-ku solrom
+  socket.on("answer-call", (data) => {
+    const { to, from, roomId } = data; // roomId thirumba anuppurom sync kaaga
+    console.log(`✅ Call accepted by ${from}, notifying ${to}`);
+    const targetSocketId = activeUsers.get(to);
+    if (targetSocketId) {
+      io.to(targetSocketId).emit("call-accepted", { from, roomId });
+    }
+  });
+  // 3. Reject Call
+  socket.on("reject-call", (data) => {
+    const { to, from } = data;
+    if (to) {
+      const targetSocketId = activeUsers.get(to);
+      if (targetSocketId) {
+        io.to(targetSocketId).emit("call-rejected", { from });
+        console.log(`📞 Call rejected by ${from}`);
+      }
+    }
+  });
+  // 4. End Call
+  socket.on("end-call", (data) => {
+    const { to, from } = data;
+    console.log(`❌ Call ended between ${from} and ${to}`);
+    
+    const targetSocketId = activeUsers.get(to);
+    if (targetSocketId) {
+      io.to(targetSocketId).emit("call-ended", { from });
+    }
+  });
+  // 🔥 LIVEKIT CODE END: Raw WebRTC events removed (offer, answer, ice-candidate)
+
   // --- ROOM HANDLING FOR GROUP CALLS ---
-  socket.on("create-room", (data) => {
-    const { roomId, creator, target, isVideo } = data;
-    socket.join(roomId);
-    io.to(target).emit("incoming-call", {
-      from: creator,
-      signal: { roomId, isVideo },
-    });
-    console.log(`🏠 Room created: ${roomId} by ${creator}`);
-  });
+  // socket.on("create-room", (data) => {
+  //   const { roomId, creator, target, isVideo } = data;
+  //   socket.join(roomId);
+  //   io.to(target).emit("incoming-call", {
+  //     from: creator,
+  //     signal: { roomId, isVideo },
+  //   });
+  //   console.log(`🏠 Room created: ${roomId} by ${creator}`);
+  // });
 
-  socket.on("add-participant", (data) => {
-    const { roomId, from, target, isVideo } = data;
-    io.to(target).emit("incoming-call", {
-      from,
-      signal: { roomId, isVideo },
-    });
-    console.log(`👥 ${from} invited ${target} to ${roomId}`);
-  });
+  // socket.on("add-participant", (data) => {
+  //   const { roomId, from, target, isVideo } = data;
+  //   io.to(target).emit("incoming-call", {
+  //     from,
+  //     signal: { roomId, isVideo },
+  //   });
+  //   console.log(`👥 ${from} invited ${target} to ${roomId}`);
+  // });
 
-  socket.on("join-room", (data) => {
-    const { roomId, userId } = data;
-    socket.join(roomId);
-    socket.to(roomId).emit("new-participant", { userId });
-    console.log(`👤 ${userId} joined room ${roomId}`);
-  });
+  // socket.on("join-room", (data) => {
+  //   const { roomId, userId } = data;
+  //   socket.join(roomId);
+  //   socket.to(roomId).emit("new-participant", { userId });
+  //   console.log(`👤 ${userId} joined room ${roomId}`);
+  // });
 
-  socket.on("send-room-signal", (data) => {
-    const { roomId, from, signal } = data;
-    socket.to(roomId).emit("room-signal", { from, signal });
-  });
+  // socket.on("send-room-signal", (data) => {
+  //   const { roomId, from, signal } = data;
+  //   socket.to(roomId).emit("room-signal", { from, signal });
+  // });
 
-  socket.on("leave-room", (data) => {
-    const { roomId, userId } = data;
-    socket.leave(roomId);
-    socket.to(roomId).emit("participant-left", { userId });
-    console.log(`🚪 ${userId} left room ${roomId}`);
-  });
+  // socket.on("leave-room", (data) => {
+  //   const { roomId, userId } = data;
+  //   socket.leave(roomId);
+  //   socket.to(roomId).emit("participant-left", { userId });
+  //   console.log(`🚪 ${userId} left room ${roomId}`);
+  // });
 
   // --- Disconnect ---
   socket.on("disconnect", () => {
