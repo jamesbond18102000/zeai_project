@@ -33,16 +33,31 @@ class _CallListenerState extends State<CallListener> {
       // ❌ DELETED: Parsing 'signal' map is no longer needed
       // final isVideo = signal['isVideo'] == true;
 
-      _showIncoming(fromId, roomId, isVideo);
-    };
+      //_showIncoming(fromId, roomId, isVideo);
+      // };
 
-    _callManager.onCallEnded = () {
-      if (Navigator.canPop(context)) {
-        Navigator.popUntil(context, (route) => route.isFirst);
+      debugPrint("🔔 Call received from $fromId");
+      // *** RED: Verify widget is still mounted before showing dialog ***
+      if (mounted) {
+        _showIncoming(fromId, roomId, isVideo);
       }
     };
 
-    _callManager.init(); // 🔥 UPDATED: init() handles Socket.IO setup
+    _callManager.onCallEnded = () {
+      // *** RED: Only pop if we are in a call screen/dialog ***
+      // Ideally, track the current route name to avoid popping the main screen
+      if (mounted && Navigator.canPop(context)) {
+        Navigator.popUntil(context, (route) => route.isFirst);
+      }
+    };
+    _callManager.init();
+
+    //   if (Navigator.canPop(context)) {
+    //     Navigator.popUntil(context, (route) => route.isFirst);
+    //   }
+    // };
+
+    // _callManager.init(); // 🔥 UPDATED: init() handles Socket.IO setup
 
     _callManager.socket.on('call-ended', (data) {
       if (Navigator.canPop(context)) {

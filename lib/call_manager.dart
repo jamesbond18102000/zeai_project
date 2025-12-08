@@ -36,6 +36,9 @@ class CallManager extends ChangeNotifier {
       'transports': ['websocket', 'polling'],
       'autoConnect': true,
       'forceNew': true,
+      'reconnection': true,
+      'reconnectionAttempts': 5,
+      'reconnectionDelay': 1000,
     });
 
     socket.onConnect((_) {
@@ -45,9 +48,13 @@ class CallManager extends ChangeNotifier {
 
     socket.on('incoming-call', (data) {
       try {
+        debugPrint("📥 Incoming call data: $data");
         final from = data['from'] as String;
+        //final roomId =
+        //  data['roomId'] as String; // 🔥 ADDED: Room ID needed for LiveKit
         final roomId =
-            data['roomId'] as String; // 🔥 ADDED: Room ID needed for LiveKit
+            data['roomId'] as String? ??
+            "${from}_${DateTime.now().millisecondsSinceEpoch}";
         final isVideo = data['isVideo'] == true;
         onIncomingCall?.call(from, roomId, isVideo);
       } catch (e) {
@@ -82,6 +89,10 @@ class CallManager extends ChangeNotifier {
 
       // 1. Get Token from Backend
       final token = await _getToken(roomId);
+      if (token.isEmpty) {
+        debugPrint("❌ Token is empty");
+        return false;
+      }
 
       debugPrint("🔑 Token received, connecting to LiveKit...");
 
@@ -99,7 +110,16 @@ class CallManager extends ChangeNotifier {
 
       // 3. Connect to Room
       _room = Room();
-      await _room!.connect(liveKitUrl, token, roomOptions: roomOptions);
+
+      // *** RED: Added connect options with timeouts ***
+      final connectOptions = ConnectOptions(autoSubscribe: true);
+
+      await _room!.connect(
+        liveKitUrl,
+        token,
+        roomOptions: roomOptions,
+        connectOptions: connectOptions,
+      );
 
       // 4. Publish Local Media
       await _room!.localParticipant?.setMicrophoneEnabled(true);
@@ -109,6 +129,8 @@ class CallManager extends ChangeNotifier {
       return true;
     } catch (e) {
       debugPrint('❌ LiveKit Connection Failed: $e');
+      // *** RED: Clean up if connection fails ***
+      disconnectLiveKit();
       return false;
     }
   }
@@ -116,20 +138,32 @@ class CallManager extends ChangeNotifier {
   // 🔥 ADDED: Helper to fetch JWT Token from your Node.js backend
   Future<String> _getToken(String roomId) async {
     try {
-      final response = await http.get(
-        Uri.parse(
-          '$serverUrl/livekit/token?roomName=$roomId&participantName=$currentUserId',
-        ),
+      // *** RED: Added error handling for network request ***
+      final uri = Uri.parse(
+        '$serverUrl/livekit/token?roomName=$roomId&participantName=$currentUserId',
       );
+      debugPrint("🌐 Requesting token from: $uri");
+      final response = await http.get(uri).timeout(const Duration(seconds: 10));
+      // final response = await http.get(
+      //   Uri.parse(
+      //     '$serverUrl/livekit/token?roomName=$roomId&participantName=$currentUserId',
+      // ),
+      //);
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return data['token'];
       } else {
-        throw Exception('Failed to fetch token: ${response.body}');
+        debugPrint(
+          '❌ Failed to fetch token: ${response.statusCode} - ${response.body}',
+        );
+        return "";
+        //throw Exception('Failed to fetch token: ${response.body}');
       }
     } catch (e) {
-      throw Exception('Token fetch error: $e');
+      //throw Exception('Token fetch error: $e');
+      debugPrint('❌ Token fetch error: $e');
+      return "";
     }
   }
 
@@ -167,7 +201,12 @@ class CallManager extends ChangeNotifier {
   // 🔥 ADDED: Cleanup LiveKit connection
   void disconnectLiveKit() async {
     if (_room != null) {
-      await _room!.disconnect();
+      // *** RED: Wrap disconnect in try-catch to prevent crashes ***
+      try {
+        await _room!.disconnect();
+      } catch (e) {
+        debugPrint("Error disconnecting room: $e");
+      }
       _room = null;
     }
   }

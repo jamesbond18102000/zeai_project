@@ -33,7 +33,9 @@ class _AudioCallPageState extends State<AudioCallPage> {
   Room? _room;
   EventsListener<RoomEvent>? _listener;
   List<Participant> participants = [];
-  bool _isCallActive = true;
+  //bool _isCallActive = true;
+  // *** RED: Track initialization state ***
+  bool _isInitializing = true;
 
   @override
   void initState() {
@@ -78,13 +80,16 @@ class _AudioCallPageState extends State<AudioCallPage> {
 
     // 🔥 ADDED: Join LiveKit Room via CallManager
     final success = await _callManager.joinRoom(roomId, widget.isVideo);
+    // *** RED: Check mounted before updating state ***
+    if (!mounted) return;
 
     if (success && _callManager.room != null) {
-      if (!mounted) return;
+      //if (!mounted) return;
 
       setState(() {
         _room = _callManager.room;
         _listener = _room!.createListener();
+        _isInitializing = false;
         _updateParticipantList(); // Initial List
       });
 
@@ -114,25 +119,35 @@ class _AudioCallPageState extends State<AudioCallPage> {
     }
   }
 
-  void _updateParticipantList() {
-    if (_room == null) return;
-    if (mounted) {
-      setState(() {
-        // Combine Local + Remote Participants into one list for the Grid
-        participants = [
-          _room!.localParticipant!,
-          ..._room!.remoteParticipants.values,
-        ];
-      });
-    }
+  // *** RED: Helper to prevent setState if not mounted ***
+  void _safeSetState() {
+    if (mounted) setState(() {});
   }
+
+  void _updateParticipantList() {
+    //if (_room == null) return;
+    //if (mounted) {
+    if (_room == null || !mounted) return;
+    setState(() {
+      // Combine Local + Remote Participants into one list for the Grid
+      participants = [
+        //_room!.localParticipant!,
+        //
+        //..._room!.remoteParticipants.values,
+        if (_room!.localParticipant != null) _room!.localParticipant!,
+        ..._room!.remoteParticipants.values,
+      ];
+    });
+  }
+  //}
 
   // Toggle Microphone
   void _toggleMute() async {
     if (_room?.localParticipant != null) {
       final isEnabled = _room!.localParticipant!.isMicrophoneEnabled();
       await _room!.localParticipant!.setMicrophoneEnabled(!isEnabled);
-      setState(() {});
+      //setState(() {});
+      _safeSetState();
     }
   }
 
@@ -141,22 +156,23 @@ class _AudioCallPageState extends State<AudioCallPage> {
     if (_room?.localParticipant != null) {
       final isEnabled = _room!.localParticipant!.isCameraEnabled();
       await _room!.localParticipant!.setCameraEnabled(!isEnabled);
-      setState(() {});
+      //setState(() {});
+      _safeSetState();
     }
   }
 
   // Toggle Speaker (LiveKit handles audio routing usually, but we can force logic here if needed)
-  void _toggleSpeaker() {
-    // LiveKit usually manages this automatically on mobile.
-    // But you can use hardware plugins if needed.
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Speaker toggle managed by OS")),
-    );
-  }
+  // void _toggleSpeaker() {
+  //   // LiveKit usually manages this automatically on mobile.
+  //   // But you can use hardware plugins if needed.
+  //   ScaffoldMessenger.of(context).showSnackBar(
+  //     const SnackBar(content: Text("Speaker toggle managed by OS")),
+  //   );
+  // }
 
   @override
   void dispose() {
-    _isCallActive = false;
+    //_isCallActive = false;
     _listener?.dispose();
 
     // 🔥 ADDED: Proper Cleanup
@@ -183,7 +199,9 @@ class _AudioCallPageState extends State<AudioCallPage> {
           children: [
             /// --- 🔥 ADDED: VIDEO GRID AREA --- ///
             Expanded(
-              child: !isConnected
+              //child: !isConnected
+              // *** RED: Better Loading UI ***
+              child: _isInitializing || !isConnected
                   ? const Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -309,8 +327,13 @@ class ParticipantWidget extends StatelessWidget {
 
     VideoTrack? videoTrack;
     if (participant.videoTrackPublications.isNotEmpty) {
-      videoTrack =
-          participant.videoTrackPublications.first.track as VideoTrack?;
+      final pub = participant.videoTrackPublications.first;
+      if (pub.subscribed && !pub.muted) {
+        videoTrack = pub.track as VideoTrack?;
+      }
+
+      //videoTrack =
+      //  participant.videoTrackPublications.first.track as VideoTrack?;
     }
 
     //final videoTrack =
