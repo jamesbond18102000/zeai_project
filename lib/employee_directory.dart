@@ -1,4 +1,3 @@
-
 // lib/screens/employee_directory.dart
 import 'package:flutter/material.dart';
 import 'dart:convert';
@@ -44,8 +43,8 @@ class EmployeeDirectoryPageState extends State<EmployeeDirectoryPage> {
   Future<void> fetchEmployees() async {
     try {
       final response = await http.get(
-        //Uri.parse("$apiBaseUrl/api/employees"), // ✅ Use apiBaseUrl
-        Uri.parse("https://zeai-project.onrender.com/api/employees"),
+        Uri.parse("$apiBaseUrl/api/employees"), // ✅ Use apiBaseUrl
+        //Uri.parse("https://zeai-project.onrender.com/api/employees"),
       );
 
       if (response.statusCode == 200) {
@@ -164,8 +163,8 @@ class _EmployeeGrid extends StatelessWidget {
         final imageUrl =
             (imgPath != null &&
                 imgPath.toString().isNotEmpty) // ✅ Use apiBaseUrl
-            //? "$apiBaseUrl/$imgPath"
-             ? "https://zeai-project.onrender.com/$imgPath"
+            ? "$apiBaseUrl/$imgPath"
+            // ? "https://zeai-project.onrender.com/$imgPath"
             : "";
 
         return _employeeCard(
