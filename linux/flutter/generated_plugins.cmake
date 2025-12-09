@@ -6,10 +6,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   audioplayers_linux
   file_selector_linux
   flutter_webrtc
-<<<<<<< HEAD
-=======
   livekit_client
->>>>>>> fcd92e1 (l)
   printing
   url_launcher_linux
 )

@@ -9,12 +9,8 @@ import 'package:zeai_project/employee_dashboard.dart' as employee;
 import 'package:zeai_project/superadmin_dashboard.dart' as superadmin;
 
 import 'user_provider.dart';
-<<<<<<< HEAD
-import 'call_listener.dart';
-=======
 import 'services/socket_service.dart';
 import 'main.dart';
->>>>>>> fcd92e1 (l)
 
 class LoginApp extends StatelessWidget {
   const LoginApp({super.key});
@@ -113,45 +109,36 @@ class _LoginPageState extends State<LoginPage> {
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
-<<<<<<< HEAD
-                // builder: (context) => const admin.AdminDashboard(),
-                builder: (context) => CallListener(
-                  currentUserId: employeeIdController.text.trim(),
-                  child: const admin.AdminDashboard(),
-                ),
-=======
+                //builder: (context) => const admin.AdminDashboard(),
+                // builder: (context) => CallListener(
+                //   currentUserId: employeeIdController.text.trim(),
+                //   child: const admin.AdminDashboard(),
+                // ),
                 builder: (context) => const admin.AdminDashboard(),
->>>>>>> fcd92e1 (l)
               ),
             );
           } else if (position == "Founder" || position == "HR") {
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
-<<<<<<< HEAD
                 //builder: (context) => const superadmin.SuperAdminDashboard(),
-                builder: (context) => CallListener(
-                  currentUserId: employeeIdController.text.trim(),
-                  child: const superadmin.SuperAdminDashboard(),
-                ),
-=======
+                // builder: (context) => CallListener(
+                //   currentUserId: employeeIdController.text.trim(),
+                //   child: const superadmin.SuperAdminDashboard(),
+                // ),
                 builder: (context) => const superadmin.SuperAdminDashboard(),
->>>>>>> fcd92e1 (l)
               ),
             );
           } else {
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
-<<<<<<< HEAD
                 //builder: (context) => const employee.EmployeeDashboard(),
-                builder: (context) => CallListener(
-                  currentUserId: employeeIdController.text.trim(),
-                  child: const employee.EmployeeDashboard(),
-                ),
-=======
+                // builder: (context) => CallListener(
+                //   currentUserId: employeeIdController.text.trim(),
+                //   child: const employee.EmployeeDashboard(),
+                // ),
                 builder: (context) => const employee.EmployeeDashboard(),
->>>>>>> fcd92e1 (l)
               ),
             );
           }
