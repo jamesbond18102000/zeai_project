@@ -1,5 +1,11 @@
 {
   "dependencies": {
+<<<<<<< HEAD
     "livekit-server-sdk": "^2.14.2"
+=======
+    "livekit-server-sdk": "^2.14.2",
+    "serverless-http": "^4.0.0",
+    "socket.io-client": "^4.8.1"
+>>>>>>> fcd92e1 (l)
   }
 }

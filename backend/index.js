@@ -1,450 +1,286 @@
-require('dotenv').config();
+const path = require("path");
+require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 
-const express = require('express');
+const express = require("express");
 const http = require("http");
-const mongoose = require('mongoose');
-const cors = require('cors');
-const path = require('path');
 const { Server } = require("socket.io");
-// 🔥 LIVEKIT CODE START: Import SDK
-const {AccessToken} = require('livekit-server-sdk');
+const mongoose = require("mongoose");
+const cors = require("cors");
+const { AccessToken } = require("livekit-server-sdk"); // LiveKit token
 
-// ---------------- MODELS ---------------- //
-const Employee = require('./models/employee');
-const LeaveBalance = require('./models/leaveBalance');
-const Payslip = require('./schema/payslip');
+// models & routes (keep your existing requires)
+const Employee = require("./models/employee");
+const LeaveBalance = require("./models/leaveBalance");
+const Payslip = require("./schema/payslip");
 
-// ---------------- ROUTES ---------------- //
-const employeeRoutes = require('./routes/employee');
-const leaveRoutes = require('./routes/leave');
-const profileRoutes = require('./routes/profile_route');
-const todoRoutes = require('./routes/todo');
-const attendanceRoutes = require('./routes/attendance');
-const performanceRoutes = require('./routes/performance');
-const reviewRiver = require('./routes/adminperformance');
-const reviewscreen = require('./routes/reviewRoutes');
-const reviewDecisionRoutes = require('./routes/performanceDecision');
-const notificationRoutes = require('./routes/notifications');
-const requestsRoutes = require('./routes/changeRequests');
-const uploadRoutes = require('./routes/upload');
-const payslipRoutes = require('./routes/payslip');
+const employeeRoutes = require("./routes/employee");
+const leaveRoutes = require("./routes/leave");
+const profileRoutes = require("./routes/profile_route");
+const todoRoutes = require("./routes/todo");
+const attendanceRoutes = require("./routes/attendance");
+const performanceRoutes = require("./routes/performance");
+const reviewRiver = require("./routes/adminperformance");
+const reviewscreen = require("./routes/reviewRoutes");
+const reviewDecisionRoutes = require("./routes/performanceDecision");
+const notificationRoutes = require("./routes/notifications");
+const requestsRoutes = require("./routes/changeRequests");
+const uploadRoutes = require("./routes/upload");
+const payslipRoutes = require("./routes/payslip");
 
-// ---------------- EXPRESS APP SETUP ---------------- //
 const app = express();
-const PORT = process.env.PORT || 5000;
-//const PORT =5000;
-//const MONGO_URI = 'mongodb://localhost:27017/Dashboard_Db';
-const MONGO_URI = process.env.MONGO_URI;
 const server = http.createServer(app);
-
-// ---------------- MIDDLEWARE ---------------- //
-app.use((req, res, next) => {
-  console.log(`📥 ${req.method} ${req.originalUrl}`);
-  next();
-});
-
-// ✅ Enable CORS globally (for REST APIs)
-app.use(cors({
-  origin: ["https://hrm15.netlify.app"],
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  credentials: true,
-}));
-
-// ✅ Initialize Socket.IO with optimized settings
-const io = new Server(server, {
-  cors: {
-    origin: ["https://hrm15.netlify.app"],
-    methods: ["GET", "POST", "PUT", "DELETE"],
-    credentials: true,
-  },
-  transports: ['websocket', 'polling'],
-  pingTimeout: 60000,
-  pingInterval: 25000,
-  maxHttpBufferSize: 1e8, // 🔴 NEW: Increase buffer for video
-});
+const PORT = process.env.PORT || 5000;
+const MONGO_URI = process.env.MONGO_URI || "";
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// ---------------- ROUTES ---------------- //
-app.use('/api', employeeRoutes);
-app.use('/apply', leaveRoutes);
-app.use('/profile', profileRoutes);
-app.use('/todo_planner', todoRoutes);
-app.use('/attendance', attendanceRoutes);
-app.use('/perform', performanceRoutes);
-app.use('/reviews', reviewRiver);
-app.use('/reports', reviewscreen);
-app.use('/review-decision', reviewDecisionRoutes);
-app.use('/notifications', notificationRoutes);
-app.use('/requests', requestsRoutes);
-app.use('/upload', uploadRoutes);
-app.use('/payslip', payslipRoutes);
+const corsOptions = {
+  origin: [
+    "https://hrm15.netlify.app",
+    "https://zeai-project.onrender.com",
+    "http://localhost:5000",
+  ],
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true,
+};
+app.use(cors(corsOptions));
 
+// Simple request logger
+app.use((req, res, next) => {
+  console.log(`➡️ ${req.method} ${req.originalUrl}`);
+  next();
+});
 
-// 🔥 LIVEKIT CODE START: Token Generation Endpoint
-// Flutter App intha URL-a call panni Token vaangum
-app.get('/livekit/token', async (req, res) => {
-  try {
-    const { roomName, participantName } = req.query;
-    if (!roomName || !participantName) {
-      return res.status(400).json({ error: 'Missing roomName or participantName' });
+// ---------- Socket.IO ---------- //
+const io = new Server(server, { cors: corsOptions });
+
+// Keep mapping userId -> socketId (or multiple sockets per user)
+const userSockets = new Map(); // userId -> Set(socketId)
+
+function addUserSocket(userId, socketId) {
+  if (!userId) return;
+  if (!userSockets.has(userId)) userSockets.set(userId, new Set());
+  userSockets.get(userId).add(socketId);
+  console.log(`✅ Registered mapping: ${userId} -> ${socketId}`);
+}
+
+function removeUserSocket(socketId) {
+  for (const [userId, sset] of userSockets.entries()) {
+    if (sset.has(socketId)) {
+      sset.delete(socketId);
+      if (sset.size === 0) userSockets.delete(userId);
+      console.log(`❌ Removed mapping: ${userId} -> ${socketId}`);
+      return;
     }
-    // Replace with your API Key & Secret from LiveKit Dashboard
-    const apiKey = process.env.LIVEKIT_API_KEY || 'APIx2XPm36vxync';
-    const apiSecret = process.env.LIVEKIT_API_SECRET || 'HryVfNbXeXyD0VwVeLee0ysEygaZuSZerfD8djEwrJAU';
-    const at = new AccessToken(apiKey, apiSecret, {
-      identity: participantName,
-    });
-    at.addGrant({ roomJoin: true, room: roomName });
-    const token = await at.toJwt();
-    console.log(`🔑 Token generated for ${participantName} in room ${roomName}`);
-    
-    res.json({ token });
-  } catch (error) {
-    console.error('Error generating token:', error);
-    res.status(500).json({ error: error.message });
   }
-});
-// 🔥 LIVEKIT CODE END
+}
 
-
-// ---------------- PAYSLIP APIs ---------------- //
-app.get('/get-payslip-details', async (req, res) => {
-  try {
-    const { employee_id, year, month } = req.query;
-    const payslip = await Payslip.findOne({ employee_id });
-    if (!payslip) return res.status(404).json({ message: 'Payslip not found' });
-
-    const yearData = payslip.data_years.find(y => y.year === year);
-    if (!yearData) return res.status(404).json({ message: 'Year not found' });
-
-    const monthKey = month.toLowerCase().slice(0, 3);
-    const monthData = yearData.months[monthKey];
-    if (!monthData) return res.status(404).json({ message: 'Month data not found' });
-
-    res.json({
-      employee_name: payslip.employee_name,
-      employee_id: payslip.employee_id,
-      date_of_joining: payslip.date_of_joining,
-      no_of_workdays: payslip.no_of_workdays,
-      designation: payslip.designation,
-      bank_name: payslip.bank_name,
-      account_no: payslip.account_no,
-      location: payslip.location,
-      pan: payslip.pan,
-      uan: payslip.uan,
-      esic_no: payslip.esic_no,
-      lop: payslip.lop,
-      earnings: monthData.earnings,
-      deductions: monthData.deductions,
-    });
-  } catch (error) {
-    console.error('❌ Fetch Payslip Error:', error);
-    res.status(500).json({ message: '❌ Failed to fetch payslip data', error: error.message });
+function emitToUser(userId, event, payload) {
+  const sockets = userSockets.get(userId);
+  if (!sockets || sockets.size === 0) {
+    console.log(`⚠️ emitToUser: user ${userId} offline (no socket)`);
+    return false;
   }
-});
+  for (const sId of sockets) {
+    io.to(sId).emit(event, payload);
+  }
+  return true;
+}
 
-app.post('/get-multiple-payslips', async (req, res) => {
-  try {
-    const { employee_id, year, months } = req.body;
-    if (!employee_id || !year || !Array.isArray(months)) {
-      return res.status(400).json({ message: 'Missing or invalid fields' });
+io.on("connection", (socket) => {
+  console.log(`🔌 Socket connected: ${socket.id}`);
+
+  // Accept register from client
+  socket.on("register", (userId) => {
+    // The client might send an object like { userId: '...' } or just the string.
+    // This handles both cases to ensure we always get a string ID.
+    const id = typeof userId === 'object' && userId !== null ? userId.userId : userId;
+    if (!id) return;
+    addUserSocket(String(id), socket.id);
+  });
+
+  socket.on("disconnect", () => {
+    console.log(`🔌 Socket disconnected: ${socket.id}`);
+    removeUserSocket(socket.id);
+  });
+
+  socket.on("call-user", (data) => {
+    console.log(
+      `📞 call-user event: from=${data.fromUserId || 'undefined'} to=${data.toUserId} room=${data.roomId} video=${data.isVideo} callerName=${data.callerName || 'Unknown'}`
+    );
+
+    const sent = emitToUser(data.toUserId, "incoming-call", {
+      fromUserId: data.fromUserId,
+      callerName: data.callerName || data.fromUserId || "Unknown",
+      roomId: data.roomId,
+      isVideo: data.isVideo,
+    });
+
+    if (sent) {
+      console.log(`✅ Incoming call forwarded to ${data.toUserId}`);
+    } else {
+      console.log(`❌ Target user ${data.toUserId} not connected`);
+      // Optionally notify caller with 'user-offline'
+      socket.emit("user-offline", { toUserId: data.toUserId });
+    }
+  });
+
+  // ✅ ADD THIS: Listen for new messages from a client
+  socket.on("send-message", (data) => {
+    const { toUserId, message, fromUserId } = data || {};
+    if (!toUserId || !message || !fromUserId) {
+      console.log("⚠️  Invalid message payload received:", data);
+      return;
     }
 
-    const payslip = await Payslip.findOne({ employee_id });
-    if (!payslip) return res.status(404).json({ message: 'Employee not found' });
+    console.log(`✉️  Relaying message from ${fromUserId} to ${toUserId}`);
 
-    const yearData = payslip.data_years.find(y => y.year === year);
-    if (!yearData) return res.status(404).json({ message: 'Year not found' });
-
-    const results = {};
-    months.forEach(month => {
-      const monthKey = month.toLowerCase().slice(0, 3);
-      const monthData = yearData.months[monthKey];
-      if (monthData) results[monthKey] = monthData;
+    // Forward the message to the recipient
+    const sent = emitToUser(toUserId, "new-message", {
+      fromUserId: fromUserId,
+      message: message,
     });
 
-    res.status(200).json({
-      employeeInfo: {
-        employee_name: payslip.employee_name,
-        employee_id: payslip.employee_id,
-        date_of_joining: payslip.date_of_joining,
-        no_of_workdays: payslip.no_of_workdays,
-        designation: payslip.designation,
-        bank_name: payslip.bank_name,
-        account_no: payslip.account_no,
-        location: payslip.location,
-        pan: payslip.pan,
-        uan: payslip.uan,
-        esic_no: payslip.esic_no,
-        lop: payslip.lop,
-      },
-      months: results,
-    });
-  } catch (error) {
-    console.error('❌ Get Multiple Payslips Error:', error);
-    res.status(500).json({ message: '❌ Failed to fetch payslip data', error: error.message });
-  }
+    if (!sent) {
+      console.log(`❌ Could not deliver message to offline user ${toUserId}`);
+    }
+  });
+  // optional signaling events
+  socket.on("accept-call", (payload) => {
+    console.log(`✅ accept-call from ${socket.id} payload: ${JSON.stringify(payload)}`);
+    const { toSocketId, roomId } = payload || {};
+    if (toSocketId) io.to(toSocketId).emit("call-accepted", { fromSocket: socket.id, roomId });
+  });
+
+  socket.on("reject-call", (payload) => {
+    console.log(`❌ reject-call from ${socket.id} payload: ${JSON.stringify(payload)}`);
+    const { toSocketId } = payload || {};
+    if (toSocketId) io.to(toSocketId).emit("call-rejected", { fromSocket: socket.id });
+  });
+
+  // raw WebRTC forwarding events...
+  socket.on("offer", ({ toSocketId, offer }) => {
+    io.to(toSocketId).emit("offer", { fromSocket: socket.id, offer });
+  });
+  socket.on("answer", ({ toSocketId, answer }) => {
+    io.to(toSocketId).emit("answer", { fromSocket: socket.id, answer });
+  });
+  socket.on("ice-candidate", ({ toSocketId, candidate }) => {
+    io.to(toSocketId).emit("ice-candidate", { fromSocket: socket.id, candidate });
+  });
 });
 
-// ---------------- GET EMPLOYEE NAME ---------------- //
-app.get('/get-employee-name/:employeeId', async (req, res) => {
+// Middleware to extract user identity from headers
+const userAuthMiddleware = (req, res, next) => {
+  const userId = req.headers['x-user-id'];
+  if (userId) {
+    req.userId = userId; // Attach userId to the request object
+    console.log(`[Auth] Request by user: ${userId}`);
+  } else {
+    console.log(`[Auth] Anonymous request for ${req.method} ${req.path}`);
+  }
+  next();
+};
+
+// ✅ CRITICAL: Use middleware BEFORE the routes that need it.
+app.use(userAuthMiddleware);
+
+// Static files & routes
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+// ✅ CRITICAL: Define specific routes like this BEFORE more general ones.
+app.get("/api/get-employee-name/:employeeId", async (req, res) => {
   try {
     const employee = await Employee.findOne({ employeeId: req.params.employeeId.trim() });
-    if (!employee) return res.status(404).json({ message: 'Employee not found' });
-
+    if (!employee) {
+      console.log(`⚠️ Employee not found for ID: ${req.params.employeeId}`);
+      return res.status(404).json({ message: "Employee not found" });
+    }
     res.status(200).json({
       employeeName: employee.employeeName,
       position: employee.position,
     });
   } catch (error) {
-    console.error('❌ Get Employee Name Error:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    console.error("❌ Get Employee Name Error:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
   }
 });
 
-// 🔴 Store active users (employeeId -> socketId mapping)
-const activeUsers = new Map();
+app.use("/api", employeeRoutes);
+app.use("/apply", leaveRoutes);
+app.use("/profile", profileRoutes);
+app.use("/todo_planner", todoRoutes);
+app.use("/attendance", attendanceRoutes);
+app.use("/perform", performanceRoutes);
+app.use("/reviews", reviewRiver);
+app.use("/reports", reviewscreen);
+app.use("/review-decision", reviewDecisionRoutes);
+app.use("/api", notificationRoutes);
+app.use("/api", requestsRoutes);
+app.use("/upload", uploadRoutes);
+app.use("/payslip", payslipRoutes);
 
-// -------------------- SOCKET.IO (SIGNALING FOR NOTIFICATIONS ONLY) -------------------- //- //
-io.on("connection", (socket) => {
-  console.log("🟢 User connected:", socket.id);
+// LiveKit token endpoint (same logic you had)
+app.post("/api/get-livekit-token", async (req, res) => {
+  const { roomName, identity } = req.body || {};
+  if (!roomName || !identity) {
+    console.log("⚠️ LiveKit token request missing roomName or identity");
+    return res.status(400).json({ error: "roomName and identity are required" });
+  }
+  const API_KEY = (process.env.LIVEKIT_API_KEY || "").trim();
+  const API_SECRET = (process.env.LIVEKIT_API_SECRET || "").trim();
+  if (!API_KEY || !API_SECRET) {
+    console.log("❌ LiveKit API key or secret missing in backend!");
+    return res.status(500).json({ error: "LiveKit API key/secret not set" });
+  }
+  try {
+    const at = new AccessToken(API_KEY, API_SECRET, { identity: String(identity) });
+    at.addGrant({
+      roomJoin: true,
+      room: String(roomName),
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true,
+    });
+    const token = await at.toJwt();
+    console.log(`✅ LiveKit token generated for ${identity} in room ${roomName}`);
+    res.status(200).json({ token });
+  } catch (error) {
+    console.log("❌ LiveKit token generation error:", error);
+    res.status(500).json({ error: "Error creating LiveKit token", details: error.message });
+  }
+});
 
-  // --- Basic Join ---
-  socket.on("join", (employeeId) => {
-    socket.join(employeeId);
-    activeUsers.set(employeeId, socket.id);
-    console.log(`👤 ${employeeId} joined personal room`);
-  });
+// New: endpoint to accept lightweight client-side logs so they appear in Render logs
+app.post("/api/log-client-event", (req, res) => {
+  try {
+    const { level = "info", message, meta } = req.body || {};
+    console.log(`[CLIENT-LOG] [${level.toUpperCase()}] ${message} ${meta ? JSON.stringify(meta) : ""}`);
+    res.status(200).json({ ok: true });
+  } catch (err) {
+    console.log("❌ Error in /api/log-client-event:", err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
 
-  // // --- Direct Calls ---
-  // socket.on("call-user", (data) => {
-  //   io.to(data.target).emit("incoming-call", {
-  //     from: data.from,
-  //     signal: data.signal,
-  //   });
-  // });
-
-  // socket.on("answer-call", (data) => {
-  //   io.to(data.to).emit("call-accepted", data.signal);
-  // });
-
-  // socket.on("reject-call", (data) => {
-  //   const { to, from } = data;
-  //   if (to) {
-  //     io.to(to).emit("call-rejected", { from });
-  //     console.log(`📞 Call rejected by ${from}`);
-  //   }
-  // });
-
-  // // 🔴 FIXED: Prevent multiple call-ended events
-  // socket.on("end-call", (data) => {
-  //   const { to, from } = data;
-  //   console.log(`❌ Call ended between ${from} and ${to}`);
-    
-  //   const targetSocketId = activeUsers.get(to);
-  //   if (targetSocketId) {
-  //     // 🔴 FIX: Send only ONCE to target
-  //     io.to(targetSocketId).emit("call-ended", { from });
-  //   }
-  // });
-
-  // // 🔴 FIXED: ICE Candidate Relay with better error handling
-  // socket.on("ice-candidate", (data) => {
-  //   const { to, candidate } = data;
-  //   if (to && candidate) {
-  //     const targetSocketId = activeUsers.get(to);
-  //     if (targetSocketId) {
-  //       io.to(targetSocketId).emit("ice-candidate", { candidate });
-  //       console.log(`🧊 ICE candidate relayed to ${to}`);
-  //     } else {
-  //       console.log(`⚠ Cannot relay ICE, ${to} not online`);
-  //     }
-  //   }
-  // });
-
-  // // 🔴 WebRTC Offer Handler
-  // socket.on("offer", (data) => {
-  //   const { to, from, offer, roomId } = data;
-  //   console.log(`📤 Offer sent: ${from} -> ${to}`);
-    
-  //   const targetSocketId = activeUsers.get(to);
-  //   if (targetSocketId) {
-  //     io.to(targetSocketId).emit("offer", {
-  //       from,
-  //       offer,
-  //       roomId
-  //     });
-  //     console.log(`✅ Offer delivered to ${to}`);
-  //   } else {
-  //     console.log(`❌ Cannot send offer, ${to} not found`);
-  //     socket.emit("user-offline", { userId: to });
-  //   }
-  // });
-
-  // // 🔴 WebRTC Answer Handler
-  // socket.on("answer", (data) => {
-  //   const { to, from, answer, roomId } = data;
-  //   console.log(`📤 Answer sent: ${from} -> ${to}`);
-    
-  //   const targetSocketId = activeUsers.get(to);
-  //   if (targetSocketId) {
-  //     io.to(targetSocketId).emit("answer", {
-  //       from,
-  //       answer,
-  //       roomId
-  //     });
-  //     console.log(`✅ Answer delivered to ${to}`);
-  //   } else {
-  //     console.log(`❌ Cannot send answer, ${to} not found`);
-  //   }
-  // });
-
-  // // 🔴 Call Acceptance Handler (for proper signaling flow)
-  // socket.on("call-accepted", (data) => {
-  //   const { to, from, roomId } = data;
-  //   console.log(`✅ Call accepted: ${from} -> ${to}`);
-    
-  //   const targetSocketId = activeUsers.get(to);
-  //   if (targetSocketId) {
-  //     io.to(targetSocketId).emit("call-accepted", { from, roomId });
-  //   }
-  // });
-
-  // // 🔴 NEW: Handle call accepted notification (NO MEDIA YET)
-  // socket.on("call-accepted-by-receiver", (data) => {
-  //   const { to, from, isVideo } = data;
-  //   console.log(`✅ Call accepted by ${from}, notifying ${to} to start media`);
-    
-  //   const targetSocketId = activeUsers.get(to);
-  //   if (targetSocketId) {
-  //     io.to(targetSocketId).emit("call-accepted-by-receiver", {
-  //       from,
-  //       isVideo: isVideo !== false
-  //     });
-  //     console.log(`📢 Acceptance notification sent to ${to}`);
-  //   }
-  // });
-
-  // 🔴 Improved Call Initiation
-   // 🔥 LIVEKIT CODE START: Simplified Call Logic (Notification Only)
-  
-  // 1. Call Initiate pannumbothu Receiver-ku solrom
-  socket.on("initiate-call", (data) => {
-    const { to, from, roomId, callerName, isVideo } = data;
-    console.log(`📞 Call initiated: ${from} -> ${to}, Room: ${roomId}`);
-    
-    const targetSocketId = activeUsers.get(to);
-    if (targetSocketId) {
-      io.to(targetSocketId).emit("incoming-call", {
-        from,
-        roomId,
-        callerName: callerName || from,
-        isVideo: isVideo !== false
-      });
-      console.log(`🔔 Incoming call sent to ${to}`);
-    } else {
-      console.log(`❌ User ${to} not online`);
-      socket.emit("user-offline", { userId: to });
-    }
-  });
-
-
-  // 2. Receiver Accept pannathum Caller-ku solrom
-  socket.on("answer-call", (data) => {
-    const { to, from, roomId } = data; // roomId thirumba anuppurom sync kaaga
-    console.log(`✅ Call accepted by ${from}, notifying ${to}`);
-    const targetSocketId = activeUsers.get(to);
-    if (targetSocketId) {
-      io.to(targetSocketId).emit("call-accepted", { from, roomId });
-    }
-  });
-  // 3. Reject Call
-  socket.on("reject-call", (data) => {
-    const { to, from } = data;
-    if (to) {
-      const targetSocketId = activeUsers.get(to);
-      if (targetSocketId) {
-        io.to(targetSocketId).emit("call-rejected", { from });
-        console.log(`📞 Call rejected by ${from}`);
-      }
-    }
-  });
-  // 4. End Call
-  socket.on("end-call", (data) => {
-    const { to, from } = data;
-    console.log(`❌ Call ended between ${from} and ${to}`);
-    
-    const targetSocketId = activeUsers.get(to);
-    if (targetSocketId) {
-      io.to(targetSocketId).emit("call-ended", { from });
-    }
-  });
-  // 🔥 LIVEKIT CODE END: Raw WebRTC events removed (offer, answer, ice-candidate)
-
-  // --- ROOM HANDLING FOR GROUP CALLS ---
-  // socket.on("create-room", (data) => {
-  //   const { roomId, creator, target, isVideo } = data;
-  //   socket.join(roomId);
-  //   io.to(target).emit("incoming-call", {
-  //     from: creator,
-  //     signal: { roomId, isVideo },
-  //   });
-  //   console.log(`🏠 Room created: ${roomId} by ${creator}`);
-  // });
-
-  // socket.on("add-participant", (data) => {
-  //   const { roomId, from, target, isVideo } = data;
-  //   io.to(target).emit("incoming-call", {
-  //     from,
-  //     signal: { roomId, isVideo },
-  //   });
-  //   console.log(`👥 ${from} invited ${target} to ${roomId}`);
-  // });
-
-  // socket.on("join-room", (data) => {
-  //   const { roomId, userId } = data;
-  //   socket.join(roomId);
-  //   socket.to(roomId).emit("new-participant", { userId });
-  //   console.log(`👤 ${userId} joined room ${roomId}`);
-  // });
-
-  // socket.on("send-room-signal", (data) => {
-  //   const { roomId, from, signal } = data;
-  //   socket.to(roomId).emit("room-signal", { from, signal });
-  // });
-
-  // socket.on("leave-room", (data) => {
-  //   const { roomId, userId } = data;
-  //   socket.leave(roomId);
-  //   socket.to(roomId).emit("participant-left", { userId });
-  //   console.log(`🚪 ${userId} left room ${roomId}`);
-  // });
-
-  // --- Disconnect ---
-  socket.on("disconnect", () => {
-    // Remove user from active users map
-    for (const [userId, socketId] of activeUsers.entries()) {
-      if (socketId === socket.id) {
-        activeUsers.delete(userId);
-        console.log(`🔴 User disconnected: ${userId} (${socket.id})`);
-        break;
-      }
-    }
+app.get("/api/debug-livekit", (req, res) => {
+  res.json({
+    api_key_present: Boolean(process.env.LIVEKIT_API_KEY),
+    api_secret_present: Boolean(process.env.LIVEKIT_API_SECRET),
+    livekit_url: process.env.LIVEKIT_URL || null,
   });
 });
 
-// ---------------- ROOT ROUTE (for testing Render) ---------------- //
-app.get('/', (req, res) => {
-  res.send('✅ HRM Backend is running successfully!');
-});
+app.get("/", (req, res) => res.send("✅ HRM Backend Running"));
 
-// ---------------- CONNECT MONGODB & START SERVER ---------------- //
-mongoose.connect(MONGO_URI)
+mongoose
+  .connect(MONGO_URI)
   .then(() => {
-    console.log('✅ MongoDB connected');
-    server.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server running on port ${PORT}`));
+    console.log("✅ MongoDB Connected");
+    server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
   })
-  .catch(err => console.error('❌ MongoDB connection error:', err));
+  .catch((err) => {
+    console.log("❌ MongoDB connection error:", err);
+    server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT} (DB not connected)`));
+  });

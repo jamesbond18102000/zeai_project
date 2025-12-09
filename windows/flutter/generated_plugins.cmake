@@ -8,7 +8,10 @@ list(APPEND FLUTTER_PLUGIN_LIST
   file_selector_windows
   flutter_webrtc
   livekit_client
+<<<<<<< HEAD
   permission_handler_windows
+=======
+>>>>>>> fcd92e1 (l)
   printing
   url_launcher_windows
 )
