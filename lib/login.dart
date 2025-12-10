@@ -1,50 +1,28 @@
+// c:/deploy_hrm/lib/login.dart
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:zeai_project/admin_dashboard.dart' as admin;
-import 'package:zeai_project/employee_dashboard.dart' as employee;
-import 'package:zeai_project/superadmin_dashboard.dart' as superadmin;
-
-import 'user_provider.dart';
+// Import the services
 import 'services/socket_service.dart';
+import 'package:http/http.dart' as http;
+import 'admin_dashboard.dart' as admin;
 import 'main.dart';
-
-class LoginApp extends StatelessWidget {
-  const LoginApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const LoginPage();
-  }
-}
+import 'employee_dashboard.dart' as employee;
+import 'superadmin_dashboard.dart' as superadmin;
+import 'user_provider.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
-
   @override
   State<LoginPage> createState() => _LoginPageState();
-}
-
-// ✅ Save login session function
-Future<void> saveLoginSession(
-  String employeeId,
-  String employeeName,
-  String position,
-) async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setString('employeeId', employeeId);
-  await prefs.setString('employeeName', employeeName);
-  await prefs.setString('position', position);
 }
 
 class _LoginPageState extends State<LoginPage> {
   final TextEditingController employeeIdController = TextEditingController();
   final TextEditingController employeeNameController = TextEditingController();
   final TextEditingController positionController = TextEditingController();
-
   bool isLoading = false;
 
   Future<void> sendLoginDetails() async {
@@ -67,15 +45,11 @@ class _LoginPageState extends State<LoginPage> {
       return;
     }
 
-    setState(() {
-      isLoading = true;
-    });
+    setState(() => isLoading = true);
 
     try {
       final response = await http.post(
-        Uri.parse(
-          'https://zeai-project.onrender.com/api/employee-login',
-        ), //change youur render url here!
+        Uri.parse('$apiBaseUrl/api/employee-login'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'employeeId': employeeIdController.text.trim(),
@@ -84,87 +58,70 @@ class _LoginPageState extends State<LoginPage> {
         }),
       );
 
-      if (response.statusCode == 201) {
-        print('✅ Login Successful');
+      if (response.statusCode == 201 && mounted) {
+        final employeeId = employeeIdController.text.trim();
+        final employeeName = employeeNameController.text.trim();
         final position = positionController.text.trim();
 
-        // ✅ Save session
-        await saveLoginSession(
-          employeeIdController.text.trim(),
-          employeeNameController.text.trim(),
-          positionController.text.trim(),
-        );
+        // Save session
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('employeeId', employeeId);
+        await prefs.setString('employeeName', employeeName);
+        await prefs.setString('position', position);
 
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          final userProvider = Provider.of<UserProvider>(
-            context,
-            listen: false,
-          );
-          userProvider.setEmployeeId(employeeIdController.text.trim());
-          userProvider.setEmployeeName(employeeNameController.text.trim());
-          userProvider.setPosition(positionController.text.trim());
+        // Update provider
+        final userProvider = Provider.of<UserProvider>(context, listen: false);
+        userProvider.setEmployeeId(employeeId);
+        userProvider.setEmployeeName(employeeName);
+        userProvider.setPosition(position); // ✅ This line is correct
 
-          // ✅ Navigate after provider is updated
-          if (position == "TL") {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                //builder: (context) => const admin.AdminDashboard(),
-                // builder: (context) => CallListener(
-                //   currentUserId: employeeIdController.text.trim(),
-                //   child: const admin.AdminDashboard(),
-                // ),
-                builder: (context) => const admin.AdminDashboard(),
-              ),
-            );
-          } else if (position == "Founder" || position == "HR") {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                //builder: (context) => const superadmin.SuperAdminDashboard(),
-                // builder: (context) => CallListener(
-                //   currentUserId: employeeIdController.text.trim(),
-                //   child: const superadmin.SuperAdminDashboard(),
-                // ),
-                builder: (context) => const superadmin.SuperAdminDashboard(),
-              ),
-            );
-          } else {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                //builder: (context) => const employee.EmployeeDashboard(),
-                // builder: (context) => CallListener(
-                //   currentUserId: employeeIdController.text.trim(),
-                //   child: const employee.EmployeeDashboard(),
-                // ),
-                builder: (context) => const employee.EmployeeDashboard(),
-              ),
-            );
-          }
-        });
-      } else if (response.statusCode == 400 || response.statusCode == 401) {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text("Invalid Credentials ❌"),
-            content: const Text(
-              "Please check your Employee ID, Name, or Position.",
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text("OK"),
-              ),
-            ],
-          ),
+        // Initialize and explicitly connect the socket service
+        debugPrint(
+          "--- 1. Initializing Socket Service for user: $employeeId ---",
         );
+        // The init method in socket_service now handles auto-connection and registration.
+        // No need to call connect() manually.
+        AppSocket.instance.init(apiBaseUrl, employeeId);
+
+        // Navigate to the correct dashboard
+        if (position == "TL") {
+          // ✅ Use named routes to keep the app within the main navigator
+          Navigator.pushReplacementNamed(context, '/admin_dashboard');
+        } else if (position == "Founder" || position == "HR") {
+          // ✅ Use named routes
+          Navigator.pushReplacementNamed(context, '/super_admin');
+        } else {
+          // ✅ Use named routes
+          Navigator.pushReplacementNamed(context, '/dashboard');
+        }
       } else {
+        // Handle login error
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text("Login Failed"),
+              content: Text(
+                "Invalid credentials or server error (Code: ${response.statusCode}).",
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("OK"),
+                ),
+              ],
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // Handle network error
+      if (mounted) {
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text("Server Error"),
-            content: Text("Status Code: ${response.statusCode}"),
+            title: const Text("Network Error"),
+            content: Text("Could not connect to the server: $e"),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
@@ -174,30 +131,17 @@ class _LoginPageState extends State<LoginPage> {
           ),
         );
       }
-    } catch (e) {
-      print('❌ Network Error: $e');
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text("Network Error"),
-          content: Text("Error: $e"),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("OK"),
-            ),
-          ],
-        ),
-      );
     } finally {
-      setState(() {
-        isLoading = false;
-      });
+      if (mounted) {
+        setState(() => isLoading = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // Your existing UI code for the login page...
+    // This part is fine and does not need changes.
     return Scaffold(
       backgroundColor: const Color(0xFF171A30),
       body: LayoutBuilder(
@@ -209,7 +153,7 @@ class _LoginPageState extends State<LoginPage> {
 
           return Column(
             children: [
-              // ✅ Top Navbar (search removed)
+              // Top Navbar
               Container(
                 height: 80,
                 decoration: const BoxDecoration(
@@ -222,18 +166,11 @@ class _LoginPageState extends State<LoginPage> {
                 child: Row(
                   children: const [
                     SizedBox(width: 16),
-                    //FaIcon(FontAwesomeIcons.chevronLeft,
-                    //color: Colors.white, size: 30),
-                    //SizedBox(width: 16),
-                    //FaIcon(FontAwesomeIcons.chevronRight,
-                    //color: Colors.white, size: 30),
-                    //SizedBox(width: 18),
                     Image(
                       image: AssetImage('assets/logo_z.png'),
                       width: 100,
                       height: 50,
                     ),
-                    //SizedBox(width:70),
                     Spacer(),
                     Image(
                       image: AssetImage('assets/logo_zeai.png'),
@@ -245,7 +182,7 @@ class _LoginPageState extends State<LoginPage> {
                 ),
               ),
 
-              // ✅ Main Body
+              // Main Body
               Expanded(
                 child: Center(
                   child: SingleChildScrollView(
@@ -259,7 +196,7 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                         SizedBox(width: spacing),
 
-                        // ✅ Login Box
+                        // Login Box
                         Container(
                           width: loginBoxWidth,
                           padding: const EdgeInsets.all(24),
@@ -304,7 +241,6 @@ class _LoginPageState extends State<LoginPage> {
                                 positionController,
                               ),
                               const SizedBox(height: 30),
-
                               SizedBox(
                                 width: 100,
                                 child: ElevatedButton(
