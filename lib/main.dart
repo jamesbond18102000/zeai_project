@@ -211,7 +211,7 @@ const String apiBaseUrl = "https://zeai-project.onrender.com";
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Web-specific: Prevent scrolling and set viewport constraints
   if (kIsWeb) {
     html.document.documentElement!.style.overflow = 'hidden';
@@ -264,7 +264,8 @@ class _MyAppState extends State<MyApp> {
     if (call == null) return;
 
     debugPrint(
-        "🔔 Incoming call detected: ${call.callerName}, room: ${call.roomId}");
+      "🔔 Incoming call detected: ${call.callerName}, room: ${call.roomId}",
+    );
     // Popup handled inside socket_service; this listener can be used for extra UI updates
   }
 

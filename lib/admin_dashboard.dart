@@ -72,7 +72,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     try {
       final response = await http.get(
         Uri.parse(
-          "https://zeai-project.onrender.com/get-employee-name/$employeeId",
+          "https://zeai-project.onrender.com/api/get-employee-name/$employeeId",
         ),
       );
 

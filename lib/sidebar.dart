@@ -49,7 +49,7 @@ class _SidebarState extends State<Sidebar> {
     try {
       final response = await http.get(
         Uri.parse(
-          'https://zeai-project.onrender.com/apply/get-employee-name/$employeeId',
+          'https://zeai-project.onrender.com/apply/api/get-employee-name/$employeeId',
         ),
       );
 
