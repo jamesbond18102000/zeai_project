@@ -133015,7 +133015,7 @@ aLC(a){var s=0,r=A.o(t.H),q=1,p=[],o=this,n,m,l,k,j,i
 var $async$J_=A.k(function(b,c){if(b===1){p.push(c)
 s=q}while(true)switch(s){case 0:q=3
 s=6
-return A.f(A.cV(A.aW("https://zeai-project.onrender.com/get-employee-name/"+a,0,null),null),$async$J_)
+return A.f(A.cV(A.aW("https://zeai-project.onrender.com/gets-employee-name/"+a,0,null),null),$async$J_)
 case 6:n=c
 if(n.b===200){k=n
 m=B.W.cZ(0,A.bL(A.bK(k.e)).aF(0,k.w),null)

@@ -361,7 +361,7 @@ router.get("/fetch/:employeeId", async (req, res) => {
 });
 // Get Employee Name (use Employee collection)
 
-router.get("/get-employee-name/:employeeId", async (req, res) => {
+router.get("/gets-employee-name/:employeeId", async (req, res) => {
   try {
     const { employeeId } = req.params;
     const emp = await Employee.findOne({ employeeId: employeeId.trim() });
