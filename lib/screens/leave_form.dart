@@ -62,20 +62,45 @@ class _LeaveFormPageState extends State<LeaveFormPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.leave == null ? 'Apply Leave' : 'Edit Leave')),
+      appBar: AppBar(
+        title: Text(widget.leave == null ? 'Apply Leave' : 'Edit Leave'),
+      ),
       body: Padding(
         padding: EdgeInsets.all(16),
         child: Form(
           key: _formKey,
           child: Column(
             children: [
-              TextFormField(controller: leaveType, decoration: InputDecoration(labelText: 'Leave Type'), validator: (v) => v!.isEmpty ? 'Required' : null),
-              TextFormField(controller: approver, decoration: InputDecoration(labelText: 'Approver'), validator: (v) => v!.isEmpty ? 'Required' : null),
-              TextFormField(controller: fromDate, decoration: InputDecoration(labelText: 'From Date'), validator: (v) => v!.isEmpty ? 'Required' : null),
-              TextFormField(controller: toDate, decoration: InputDecoration(labelText: 'To Date'), validator: (v) => v!.isEmpty ? 'Required' : null),
-              TextFormField(controller: reason, decoration: InputDecoration(labelText: 'Reason'), validator: (v) => v!.isEmpty ? 'Required' : null),
+              TextFormField(
+                controller: leaveType,
+                decoration: InputDecoration(labelText: 'Leave Type'),
+                validator: (v) => v!.isEmpty ? 'Required' : null,
+              ),
+              TextFormField(
+                controller: approver,
+                decoration: InputDecoration(labelText: 'Approver'),
+                validator: (v) => v!.isEmpty ? 'Required' : null,
+              ),
+              TextFormField(
+                controller: fromDate,
+                decoration: InputDecoration(labelText: 'From Date'),
+                validator: (v) => v!.isEmpty ? 'Required' : null,
+              ),
+              TextFormField(
+                controller: toDate,
+                decoration: InputDecoration(labelText: 'To Date'),
+                validator: (v) => v!.isEmpty ? 'Required' : null,
+              ),
+              TextFormField(
+                controller: reason,
+                decoration: InputDecoration(labelText: 'Reason'),
+                validator: (v) => v!.isEmpty ? 'Required' : null,
+              ),
               SizedBox(height: 20),
-              ElevatedButton(onPressed: _submit, child: Text(widget.leave == null ? 'Apply' : 'Update')),
+              ElevatedButton(
+                onPressed: _submit,
+                child: Text(widget.leave == null ? 'Apply' : 'Update'),
+              ),
             ],
           ),
         ),
