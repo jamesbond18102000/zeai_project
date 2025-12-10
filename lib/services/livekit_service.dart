@@ -75,7 +75,8 @@ class LiveKitService with ChangeNotifier {
         throw Exception('Could not fetch a valid LiveKit token.');
 
       _isVideoCall = isVideo;
-      final urlToUse = serverUrl ?? livekitUrl;
+      //final urlToUse = serverUrl ?? livekitUrl;
+      final urlToUse = livekitUrl; // serverUrl never overrides
 
       _room = Room(
         roomOptions: RoomOptions(adaptiveStream: true, dynacast: true),
