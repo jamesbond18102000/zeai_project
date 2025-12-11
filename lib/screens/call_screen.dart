@@ -19,6 +19,11 @@ class _CallScreenState extends State<CallScreen> {
   bool _isMicMuted = false;
   bool _isCameraOff = false;
 
+
+  // Prevent double taps while async toggle in progress
+  bool _micProcessing = false;
+  bool _cameraProcessing = false;
+
   @override
   void initState() {
     super.initState();
@@ -66,7 +71,12 @@ class _CallScreenState extends State<CallScreen> {
     super.dispose();
   }
 
+
   Future<void> _toggleMic() async {
+/*
+  Future<void> _toggleMic() async {
+    
+
     final local = _room?.localParticipant;
     if (local == null) return;
 
@@ -74,6 +84,7 @@ class _CallScreenState extends State<CallScreen> {
     await local.setMicrophoneEnabled(newState);
     setState(() => _isMicMuted = !newState);
   }
+
 
   Future<void> _toggleCamera() async {
     if (widget.callType == "audio") return;
@@ -83,6 +94,74 @@ class _CallScreenState extends State<CallScreen> {
     final newState = !_isCameraOff;
     await local.setCameraEnabled(newState);
     setState(() => _isCameraOff = !newState);
+
+*/
+
+
+
+Future<void> _toggleMic() async {
+    // Prevent double taps
+    if (_micProcessing) return;
+    _micProcessing = true;
+
+    try {
+      final local = _room?.localParticipant;
+      if (local == null) return;
+
+      // Current flag _isMicMuted = true means mic is currently muted.
+      // We will flip the muted state:
+      final newMuted = !_isMicMuted;
+
+      // setMicrophoneEnabled expects "enabled" boolean.
+      // enabled = !newMuted
+      final enabled = !newMuted;
+
+      // call LiveKit
+      await local.setMicrophoneEnabled(enabled);
+
+      // update UI to reflect the new muted state
+      if (mounted) setState(() => _isMicMuted = newMuted);
+    } catch (e) {
+      // optional: you can log or show a toast here
+        print('Toggle mic error: $e');
+    } finally {
+      _micProcessing = false;
+    }
+  }
+
+  // Future<void> _toggleCamera() async {
+  //   if (widget.callType == "audio") return;
+  //   final local = _room?.localParticipant;
+  //   if (local == null) return;
+
+  //   final newState = !_isCameraOff;
+  //   await local.setCameraEnabled(newState);
+  //   setState(() => _isCameraOff = !newState);
+  // }
+// ---------- FIXED: camera toggle logic ----------
+  Future<void> _toggleCamera() async {
+    if (widget.callType == "audio") return;
+    if (_cameraProcessing) return;
+    _cameraProcessing = true;
+
+    try {
+      final local = _room?.localParticipant;
+      if (local == null) return;
+
+      // _isCameraOff true means camera currently off.
+      // We flip to newCameraOff:
+      final newCameraOff = !_isCameraOff;
+      final enabled = !newCameraOff; // enabled = camera on/off
+
+      await local.setCameraEnabled(enabled);
+
+      if (mounted) setState(() => _isCameraOff = newCameraOff);
+    } catch (e) {
+        print('Toggle camera error: $e');
+    } finally {
+      _cameraProcessing = false;
+    }
+
   }
 
   Future<void> _hangUp() async {
