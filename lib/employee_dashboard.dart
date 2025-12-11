@@ -13,6 +13,7 @@ import 'company_events.dart';
 import 'employeenotification.dart';
 import 'attendance_login.dart';
 import 'event_banner_slider.dart';
+import '../screens/group_call_screen.dart';
 
 class EmployeeDashboard extends StatefulWidget {
   const EmployeeDashboard({super.key});
@@ -187,6 +188,13 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
             Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const AttendanceLoginPage()),
+            );
+          }),
+
+          _quickActionButton('Group Call', () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const GroupCallScreen(userId: "YOUR_USER_ID")),
             );
           }),
           _quickActionButton('Notifications Preview', () {

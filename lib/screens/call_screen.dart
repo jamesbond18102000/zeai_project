@@ -72,7 +72,7 @@ class _CallScreenState extends State<CallScreen> {
   }
 
 
-  Future<void> _toggleMic() async {
+  //Future<void> _toggleMic() async {
 /*
   Future<void> _toggleMic() async {
     

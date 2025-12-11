@@ -25,6 +25,7 @@ import 'leave_approval.dart';
 //import 'adminperformance.dart'; // for Performance Review
 import 'superadmin_performance.dart'; // ✅ for SuperadminPerformancePageReview
 import 'employee_list.dart';
+import '../screens/group_call_screen.dart';
 
 class SuperAdminDashboard extends StatefulWidget {
   const SuperAdminDashboard({super.key});
@@ -875,6 +876,14 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
             Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const AttendanceLoginPage()),
+            );
+          }),
+
+
+          _quickActionButton('Group Call', () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const GroupCallScreen(userId: "YOUR_USER_ID")),
             );
           }),
           _quickActionButton('Notifications Preview', () {

@@ -31,6 +31,8 @@ dependencies:
   livekit_client: ^2.5.4
   flutter_webrtc: ^1.2.1    # UPDATED VERSION
   flutter_dotenv: ^6.0.0
+  uni_links: ^0.5.1
+
     
   
 dev_dependencies:

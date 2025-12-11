@@ -17,6 +17,10 @@ import 'event_banner_slider.dart';
 import 'leave_approval.dart';
 import 'adminperformance.dart'; // ✅ for Performance Review
 import 'package:intl/intl.dart';
+import '../screens/group_call_screen.dart';
+//import '../screens/call_screen.dart';
+
+
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -385,6 +389,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
             Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const AttendanceLoginPage()),
+            );
+          }),
+
+          _quickActionButton('Group Call', () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const GroupCallScreen(userId: "YOUR_USER_ID")),
             );
           }),
           _quickActionButton('Notifications Preview', () {
