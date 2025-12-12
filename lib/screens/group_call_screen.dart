@@ -3,6 +3,7 @@ import 'package:flutter/services.dart'; // For Clipboard
 import 'dart:math'; // For Random ID
 import '../services/livekit_service.dart';
 import 'call_screen.dart'; // Unga Call Screen import
+import '../sidebar.dart';
 
 class GroupCallScreen extends StatefulWidget {
   final String userId;
@@ -68,64 +69,20 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
     );
   }
 
-  @override
+    @override
   Widget build(BuildContext context) {
-    final primaryColor = const Color(0xFF6200EA); 
-
-    return Scaffold(
-      // --- Sidebar Integrated Directly ---
-      drawer: Drawer(
-        child: Container(
-          color: Colors.white,
-          child: ListView(
-            padding: EdgeInsets.zero,
-            children: [
-              UserAccountsDrawerHeader(
-                decoration: BoxDecoration(color: primaryColor),
-                accountName: Text(widget.userId, style: const TextStyle(fontWeight: FontWeight.bold)),
-                accountEmail: const Text("Online"),
-                currentAccountPicture: const CircleAvatar(
-                  backgroundColor: Colors.white,
-                  child: Icon(Icons.person, color: Colors.black),
-                ),
-              ),
-              ListTile(
-                leading: const Icon(Icons.home),
-                title: const Text('Home'),
-                onTap: () => Navigator.pop(context),
-              ),
-              ListTile(
-                leading: const Icon(Icons.groups, color: Colors.purple),
-                title: const Text('Group Call', style: TextStyle(color: Colors.purple, fontWeight: FontWeight.bold)),
-                onTap: () => Navigator.pop(context),
-              ),
-              const Divider(),
-              ListTile(
-                leading: const Icon(Icons.logout, color: Colors.red),
-                title: const Text('Logout'),
-                onTap: () {
-                  // Add logout logic here
-                  Navigator.pop(context);
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-      appBar: AppBar(
-        title: const Text("Group Conference", style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: primaryColor,
-        foregroundColor: Colors.white,
-        centerTitle: true,
-        elevation: 0,
-      ),
-      backgroundColor: Colors.white,
+    // Matching the Deep Purple theme from your LeaveApprovalPage
+    final primaryColor = Colors.deepPurple;
+    // --- USING SIDEBAR WRAPPER (Like LeaveApprovalPage) ---
+    return Sidebar(
+      title: "Group Conference",
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24.0),
         child: Column(
           children: [
             const SizedBox(height: 20),
             
+            // --- Header Illustration ---
             Container(
               padding: const EdgeInsets.all(25),
               decoration: BoxDecoration(
@@ -150,8 +107,7 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
               style: TextStyle(color: Colors.grey[600], fontSize: 15),
             ),
             const SizedBox(height: 40),
-
-            // --- CREATE MEETING CARD ---
+            // --- CARD 1: CREATE NEW ---
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
@@ -169,7 +125,10 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
               child: Column(
                 children: [
                   if (_generatedRoomId.isEmpty) ...[
-                    const Text("Start a New Meeting", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+                    const Text(
+                      "Start a New Meeting", 
+                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)
+                    ),
                     const SizedBox(height: 15),
                     SizedBox(
                       width: double.infinity,
@@ -181,11 +140,14 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
                           backgroundColor: primaryColor,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)
+                          ),
                         ),
                       ),
                     ),
                   ] else ...[
+                    // Show generated ID
                     const Text("Share this ID:", style: TextStyle(color: Colors.grey)),
                     const SizedBox(height: 8),
                     Container(
@@ -227,7 +189,9 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
                           foregroundColor: primaryColor,
                           side: BorderSide(color: primaryColor),
                           padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)
+                          ),
                         ),
                       ),
                     ),
@@ -235,7 +199,6 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
                 ],
               ),
             ),
-
             const SizedBox(height: 30),
             Row(children: [
               Expanded(child: Divider(color: Colors.grey[300])),
@@ -246,8 +209,7 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
               Expanded(child: Divider(color: Colors.grey[300])),
             ]),
             const SizedBox(height: 30),
-
-            // --- JOIN MEETING INPUT ---
+            // --- CARD 2: JOIN EXISTING ---
             const Align(
               alignment: Alignment.centerLeft,
               child: Text("Join with ID", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
@@ -278,19 +240,21 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 18),
                   elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)
+                  ),
                 ),
                 child: _isBusy
                   ? const SizedBox(
                       width: 24, height: 24,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
-                    )
-                  : const Text("Join Meeting", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+                      child: CircularProgressIndicator(color: Colors.white, strokeWidth:2) )
+           : const Text("Join Meeting", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+       ),
+     ),
+   ],
+ ),
+
+),
+);
+}
 }

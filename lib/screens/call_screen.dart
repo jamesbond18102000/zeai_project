@@ -43,11 +43,24 @@ class _CallScreenState extends State<CallScreen> {
 
   void _setupListeners() {
     _listener!
-      ..on<ParticipantEvent>((_) => _updateParticipants())
+      // 1. IMPORTANT: Handle New People Joining
+      ..on<ParticipantConnectedEvent>((event) {
+        print("Someone joined: ${event.participant.identity}");
+        _updateParticipants();
+      })
+      // 2. IMPORTANT: Handle People Leaving
+      ..on<ParticipantDisconnectedEvent>((event) {
+        print("Someone left: ${event.participant.identity}");
+        _updateParticipants();
+      })
+      //..on<ParticipantEvent>((_) => _updateParticipants())
       ..on<TrackMutedEvent>((_) => _updateParticipants())
       ..on<TrackUnmutedEvent>((_) => _updateParticipants())
       ..on<LocalTrackPublishedEvent>((_) => _updateParticipants())
       ..on<LocalTrackUnpublishedEvent>((_) => _updateParticipants())
+      ..on<TrackSubscribedEvent>((_) => _updateParticipants()) // Video load aaga ithu thevai
+      ..on<TrackUnsubscribedEvent>((_) => _updateParticipants())
+      // 4. Handle Disconnection
       ..on<RoomDisconnectedEvent>((_) {
         if (mounted) Navigator.pop(context);
       });
@@ -57,9 +70,13 @@ class _CallScreenState extends State<CallScreen> {
     if (!mounted) return;
 
     setState(() {
+       // 1. Get all remote participants
       _participants = _room?.remoteParticipants.values.toList() ?? [];
+      // 2. Add local participant (You) to the START of the list
       if (_room?.localParticipant != null) {
+        // Just in case it's already there (rare), remove it first
         _participants.remove(_room!.localParticipant);
+         // Insert at Index 0 so you are always the first tile
         _participants.insert(0, _room!.localParticipant!);
       }
     });

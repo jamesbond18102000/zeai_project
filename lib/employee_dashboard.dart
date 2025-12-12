@@ -14,6 +14,7 @@ import 'employeenotification.dart';
 import 'attendance_login.dart';
 import 'event_banner_slider.dart';
 import '../screens/group_call_screen.dart';
+import '../services/socket_service.dart'; // Make sure this path is correct
 
 class EmployeeDashboard extends StatefulWidget {
   const EmployeeDashboard({super.key});
@@ -190,13 +191,32 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
               MaterialPageRoute(builder: (_) => const AttendanceLoginPage()),
             );
           }),
-
           _quickActionButton('Group Call', () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const GroupCallScreen(userId: "YOUR_USER_ID")),
-            );
-          }),
+  // Get ID from AppSocket
+  final currentUserId = AppSocket.instance.loggedInUserId;
+  
+  if (currentUserId != null && currentUserId.isNotEmpty) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GroupCallScreen(userId: currentUserId),
+      ),
+    );
+  } else {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Error: User ID not found. Please login again.")),
+    );
+  }
+}),
+          // _quickActionButton('Group Call', () {
+          //   Navigator.push(
+          //     context,
+          //     MaterialPageRoute(builder: (_) => const GroupCallScreen(userId: "YOUR_USER_ID")),
+          //   );
+          // }),
+
+          // Unga Dashboard la iruka button code:
+
           _quickActionButton('Notifications Preview', () {
             final empId = Provider.of<UserProvider>(
               context,

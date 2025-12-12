@@ -18,7 +18,8 @@ import 'leave_approval.dart';
 import 'adminperformance.dart'; // ✅ for Performance Review
 import 'package:intl/intl.dart';
 import '../screens/group_call_screen.dart';
-//import '../screens/call_screen.dart';
+
+import '../services/socket_service.dart'; // Make sure this path is correct
 
 
 
@@ -392,12 +393,48 @@ class _AdminDashboardState extends State<AdminDashboard> {
             );
           }),
 
-          _quickActionButton('Group Call', () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const GroupCallScreen(userId: "YOUR_USER_ID")),
-            );
-          }),
+          // _quickActionButton('Group Call', () {
+          //   Navigator.push(
+          //     context,
+          //     MaterialPageRoute(builder: (_) => const GroupCallScreen(userId: "YOUR_USER_ID")),
+          //   );
+          // }),
+
+          // Unga Dashboard la iruka button code:
+// _quickActionButton('Group Call', () {
+//   // Check if loggedInUserId is available
+//   if (loggedInUserId != null && loggedInUserId!.isNotEmpty) {
+//       Navigator.push(
+//         context,
+//         MaterialPageRoute(
+//           builder: (_) => GroupCallScreen(userId: loggedInUserId!), // <-- PASS ACTUAL ID
+//         ),
+//       );
+//   } else {
+//       ScaffoldMessenger.of(context).showSnackBar(
+//           const SnackBar(content: Text("Error: User ID not found. Please login again."))
+//       );
+//   }
+// }),
+
+_quickActionButton('Group Call', () {
+  // Get ID from AppSocket
+  final currentUserId = AppSocket.instance.loggedInUserId;
+  
+  if (currentUserId != null && currentUserId.isNotEmpty) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GroupCallScreen(userId: currentUserId),
+      ),
+    );
+  } else {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Error: User ID not found. Please login again.")),
+    );
+  }
+}),
+
           _quickActionButton('Notifications Preview', () {
             Navigator.push(
               context,
