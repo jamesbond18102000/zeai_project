@@ -19,7 +19,6 @@ class _CallScreenState extends State<CallScreen> {
   bool _isMicMuted = false;
   bool _isCameraOff = false;
 
-
   // Prevent double taps while async toggle in progress
   bool _micProcessing = false;
   bool _cameraProcessing = false;
@@ -58,7 +57,9 @@ class _CallScreenState extends State<CallScreen> {
       ..on<TrackUnmutedEvent>((_) => _updateParticipants())
       ..on<LocalTrackPublishedEvent>((_) => _updateParticipants())
       ..on<LocalTrackUnpublishedEvent>((_) => _updateParticipants())
-      ..on<TrackSubscribedEvent>((_) => _updateParticipants()) // Video load aaga ithu thevai
+      ..on<TrackSubscribedEvent>(
+        (_) => _updateParticipants(),
+      ) // Video load aaga ithu thevai
       ..on<TrackUnsubscribedEvent>((_) => _updateParticipants())
       // 4. Handle Disconnection
       ..on<RoomDisconnectedEvent>((_) {
@@ -70,13 +71,13 @@ class _CallScreenState extends State<CallScreen> {
     if (!mounted) return;
 
     setState(() {
-       // 1. Get all remote participants
+      // 1. Get all remote participants
       _participants = _room?.remoteParticipants.values.toList() ?? [];
       // 2. Add local participant (You) to the START of the list
       if (_room?.localParticipant != null) {
         // Just in case it's already there (rare), remove it first
         _participants.remove(_room!.localParticipant);
-         // Insert at Index 0 so you are always the first tile
+        // Insert at Index 0 so you are always the first tile
         _participants.insert(0, _room!.localParticipant!);
       }
     });
@@ -88,9 +89,8 @@ class _CallScreenState extends State<CallScreen> {
     super.dispose();
   }
 
-
   //Future<void> _toggleMic() async {
-/*
+  /*
   Future<void> _toggleMic() async {
     
 
@@ -114,9 +114,7 @@ class _CallScreenState extends State<CallScreen> {
 
 */
 
-
-
-Future<void> _toggleMic() async {
+  Future<void> _toggleMic() async {
     // Prevent double taps
     if (_micProcessing) return;
     _micProcessing = true;
@@ -140,7 +138,7 @@ Future<void> _toggleMic() async {
       if (mounted) setState(() => _isMicMuted = newMuted);
     } catch (e) {
       // optional: you can log or show a toast here
-        print('Toggle mic error: $e');
+      print('Toggle mic error: $e');
     } finally {
       _micProcessing = false;
     }
@@ -155,7 +153,7 @@ Future<void> _toggleMic() async {
   //   await local.setCameraEnabled(newState);
   //   setState(() => _isCameraOff = !newState);
   // }
-// ---------- FIXED: camera toggle logic ----------
+  // ---------- FIXED: camera toggle logic ----------
   Future<void> _toggleCamera() async {
     if (widget.callType == "audio") return;
     if (_cameraProcessing) return;
@@ -174,11 +172,10 @@ Future<void> _toggleMic() async {
 
       if (mounted) setState(() => _isCameraOff = newCameraOff);
     } catch (e) {
-        print('Toggle camera error: $e');
+      print('Toggle camera error: $e');
     } finally {
       _cameraProcessing = false;
     }
-
   }
 
   Future<void> _hangUp() async {
@@ -186,148 +183,168 @@ Future<void> _toggleMic() async {
     if (mounted) Navigator.pop(context);
   }
 
+  // @override
+  // Widget build(BuildContext context) {
+  //   // **STEP 2: SELF-PROTECTING WRAPPER - Blocks ALL parent scrolling**
+  //   return Scaffold(
+  //     resizeToAvoidBottomInset: false,
+  //     backgroundColor: Colors.black,
+  //     body: ScrollConfiguration(
+  //       // **DISABLES ALL SCROLLING GLOBALLY for this screen**
+  //       behavior: ScrollConfiguration.of(context).copyWith(
+  //         scrollbars: false,
+  //         overscroll: false,
+  //         physics: const NeverScrollableScrollPhysics(),
+  //       ),
+  //       child: Center(
+  //         // **STEP 1: FIXED SIZE BOX - Never exceeds viewport**
+  //         child: ConstrainedBox(
+  //           constraints: const BoxConstraints(
+  //             maxWidth: 480, // Fixed width - fits any laptop
+  //             maxHeight: 650, // Fixed height - no scroll possible
+  //           ),
+  //           child: Container(
+  //             decoration: BoxDecoration(
+  //               color: Colors.grey[900],
+  //               borderRadius: BorderRadius.circular(20),
+  //               boxShadow: [
+  //                 BoxShadow(
+  //                   color: Colors.black.withOpacity(0.5),
+  //                   blurRadius: 30,
+  //                   spreadRadius: 0,
+  //                 ),
+  //               ],
+  //             ),
+  //             child: Column(
+  //               mainAxisSize:
+  //                   MainAxisSize.min, // Never grows beyond constraints
+  //               children: [
+  //                 // Header
+  //                 Container(
+  //                   height: 60,
+  //                   padding: const EdgeInsets.symmetric(horizontal: 20),
+  //                   decoration: BoxDecoration(
+  //                     color: Colors.black87,
+  //                     borderRadius: const BorderRadius.vertical(
+  //                       top: Radius.circular(20),
+  //                     ),
+  //                   ),
+  //                   child: Row(
+  //                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  //                     children: [
+  //                       Text(
+  //                         '${widget.callType.toUpperCase()} CALL',
+  //                         style: const TextStyle(
+  //                           color: Colors.white,
+  //                           fontSize: 18,
+  //                           fontWeight: FontWeight.bold,
+  //                         ),
+  //                       ),
+  //                       IconButton(
+  //                         icon: const Icon(
+  //                           Icons.close,
+  //                           color: Colors.white70,
+  //                           size: 24,
+  //                         ),
+  //                         onPressed: _hangUp,
+  //                       ),
+  //                     ],
+  //                   ),
+  //                 ),
+
+  //                 // Main content area
+  //                 Expanded(
+  //                   child: Column(
+  //                     children: [
+  //                       // Video/Audio area
+  //                       Expanded(
+  //                         child: widget.callType == "audio"
+  //                             ? _buildAudioContent()
+  //                             : _buildVideoContent(),
+  //                       ),
+
+  //                       // Controls
+  //                       Container(
+  //                         height: 90,
+  //                         padding: const EdgeInsets.symmetric(horizontal: 24),
+  //                         decoration: BoxDecoration(
+  //                           color: Colors.black87,
+  //                           borderRadius: const BorderRadius.vertical(
+  //                             bottom: Radius.circular(20),
+  //                           ),
+  //                         ),
+  //                         child: _buildControls(),
+  //                       ),
+  //                     ],
+  //                   ),
+  //                 ),
+  //               ],
+  //             ),
+  //           ),
+  //         ),
+  //       ),
+  //     ),
+  //   );
+  // }
+
   @override
   Widget build(BuildContext context) {
-    // **STEP 2: SELF-PROTECTING WRAPPER - Blocks ALL parent scrolling**
+    // UPDATED: Full screen scaffold, removed ConstrainedBox/Center
     return Scaffold(
       resizeToAvoidBottomInset: false,
       backgroundColor: Colors.black,
-      body: ScrollConfiguration(
-        // **DISABLES ALL SCROLLING GLOBALLY for this screen**
-        behavior: ScrollConfiguration.of(context).copyWith(
-          scrollbars: false,
-          overscroll: false,
-          physics: const NeverScrollableScrollPhysics(),
-        ),
-        child: Center(
-          // **STEP 1: FIXED SIZE BOX - Never exceeds viewport**
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxWidth: 480, // Fixed width - fits any laptop
-              maxHeight: 650, // Fixed height - no scroll possible
-            ),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.grey[900],
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.5),
-                    blurRadius: 30,
-                    spreadRadius: 0,
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize:
-                    MainAxisSize.min, // Never grows beyond constraints
-                children: [
-                  // Header
-                  Container(
-                    height: 60,
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    decoration: BoxDecoration(
-                      color: Colors.black87,
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(20),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          '${widget.callType.toUpperCase()} CALL',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.close,
-                            color: Colors.white70,
-                            size: 24,
-                          ),
-                          onPressed: _hangUp,
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Main content area
-                  Expanded(
-                    child: Column(
-                      children: [
-                        // Video/Audio area
-                        Expanded(
-                          child: widget.callType == "audio"
-                              ? _buildAudioContent()
-                              : _buildVideoContent(),
-                        ),
-
-                        // Controls
-                        Container(
-                          height: 90,
-                          padding: const EdgeInsets.symmetric(horizontal: 24),
-                          decoration: BoxDecoration(
-                            color: Colors.black87,
-                            borderRadius: const BorderRadius.vertical(
-                              bottom: Radius.circular(20),
-                            ),
-                          ),
-                          child: _buildControls(),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAudioContent() {
-    final name = _participants.isNotEmpty
-        ? _participants.first.identity
-        : "Audio Call";
-
-    return Container(
-      color: Colors.transparent,
-      child: Center(
+      body: SafeArea(
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            // --- Header ---
             Container(
-              width: 120,
-              height: 120,
+              height: 60,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
               decoration: BoxDecoration(
-                color: Colors.grey[800],
-                shape: BoxShape.circle,
+                color: Colors.black87,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(20),
+                ),
               ),
-              child: const Icon(
-                Icons.account_circle,
-                color: Colors.white70,
-                size: 80,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '${widget.callType.toUpperCase()} CALL',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(
+                      Icons.close,
+                      color: Colors.white70,
+                      size: 24,
+                    ),
+                    onPressed: _hangUp,
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 24),
-            Text(
-              name,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-              textAlign: TextAlign.center,
+            // --- Main Content Area ---
+            Expanded(
+              child: widget.callType == "audio"
+                  ? _buildAudioContent()
+                  : _buildVideoContent(),
             ),
-            const SizedBox(height: 8),
-            Text(
-              "Active Call",
-              style: TextStyle(color: Colors.white70, fontSize: 16),
+            // --- Controls ---
+            Container(
+              height: 90,
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              decoration: BoxDecoration(
+                color: Colors.black87,
+                borderRadius: const BorderRadius.vertical(
+                  bottom: Radius.circular(20),
+                ),
+              ),
+              child: _buildControls(),
             ),
           ],
         ),
@@ -335,9 +352,114 @@ Future<void> _toggleMic() async {
     );
   }
 
-  Widget _buildVideoContent() {
-    final participants = _participants;
+  // Widget _buildAudioContent() {
+  //   final name = _participants.isNotEmpty
+  //       ? _participants.first.identity
+  //       : "Audio Call";
 
+  //   return Container(
+  //     color: Colors.transparent,
+  //     child: Center(
+  //       child: Column(
+  //         mainAxisAlignment: MainAxisAlignment.center,
+  //         children: [
+  //           Container(
+  //             width: 120,
+  //             height: 120,
+  //             decoration: BoxDecoration(
+  //               color: Colors.grey[800],
+  //               shape: BoxShape.circle,
+  //             ),
+  //             child: const Icon(
+  //               Icons.account_circle,
+  //               color: Colors.white70,
+  //               size: 80,
+  //             ),
+  //           ),
+  //           const SizedBox(height: 24),
+  //           Text(
+  //             name,
+  //             style: const TextStyle(
+  //               color: Colors.white,
+  //               fontSize: 24,
+  //               fontWeight: FontWeight.bold,
+  //             ),
+  //             textAlign: TextAlign.center,
+  //           ),
+  //           const SizedBox(height: 8),
+  //           Text(
+  //             "Active Call",
+  //             style: TextStyle(color: Colors.white70, fontSize: 16),
+  //           ),
+  //         ],
+  //       ),
+  //     ),
+  //   );
+  // }
+
+  // Widget _buildVideoContent() {
+  //   final participants = _participants;
+
+  //   if (participants.isEmpty) {
+  //     return Container(
+  //       color: Colors.black,
+  //       child: const Center(
+  //         child: Column(
+  //           mainAxisAlignment: MainAxisAlignment.center,
+  //           children: [
+  //             Icon(Icons.video_call, color: Colors.white70, size: 80),
+  //             SizedBox(height: 20),
+  //             Text(
+  //               "Waiting for participants...",
+  //               style: TextStyle(color: Colors.white, fontSize: 18),
+  //             ),
+  //           ],
+  //         ),
+  //       ),
+  //     );
+  //   }
+
+  //   return Container(
+  //     margin: const EdgeInsets.all(12),
+  //     child: LayoutBuilder(
+  //       builder: (context, constraints) {
+  //         final count = participants.length;
+  //         final columns = count == 1 ? 1 : (count <= 4 ? 2 : 2);
+  //         final spacing = 12.0;
+  //         final itemWidth =
+  //             (constraints.maxWidth - (columns - 1) * spacing) / columns;
+  //         final itemHeight = constraints.maxHeight * 0.48;
+
+  //         return Wrap(
+  //           spacing: spacing,
+  //           runSpacing: spacing,
+  //           alignment: WrapAlignment.center,
+  //           children: participants.map((participant) {
+  //             return SizedBox(
+  //               width: itemWidth,
+  //               height: itemHeight,
+  //               child: ParticipantTile(participant: participant),
+  //             );
+  //           }).toList(),
+  //         );
+  //       },
+  //     ),
+  //   );
+  // }
+  // UPDATED: Now uses the same grid logic as Video
+  Widget _buildAudioContent() {
+    // If you want Audio to look exactly like Video (Grid view of participants)
+    return _buildResponsiveGrid();
+  }
+
+  // UPDATED: Now uses the new Responsive Grid Logic
+  Widget _buildVideoContent() {
+    return _buildResponsiveGrid();
+  }
+
+  // --- NEW: Shared Grid Logic for both Audio and Video ---
+  Widget _buildResponsiveGrid() {
+    final participants = _participants;
     if (participants.isEmpty) {
       return Container(
         color: Colors.black,
@@ -345,7 +467,7 @@ Future<void> _toggleMic() async {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.video_call, color: Colors.white70, size: 80),
+              Icon(Icons.groups, color: Colors.white70, size: 80),
               SizedBox(height: 20),
               Text(
                 "Waiting for participants...",
@@ -356,35 +478,86 @@ Future<void> _toggleMic() async {
         ),
       );
     }
-
+    // Full width/height container
     return Container(
-      margin: const EdgeInsets.all(12),
+      width: double.infinity,
+      height: double.infinity,
+      padding: const EdgeInsets.all(4),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final count = participants.length;
-          final columns = count == 1 ? 1 : (count <= 4 ? 2 : 2);
-          final spacing = 12.0;
-          final itemWidth =
-              (constraints.maxWidth - (columns - 1) * spacing) / columns;
-          final itemHeight = constraints.maxHeight * 0.48;
 
-          return Wrap(
-            spacing: spacing,
-            runSpacing: spacing,
-            alignment: WrapAlignment.center,
-            children: participants.map((participant) {
-              return SizedBox(
-                width: itemWidth,
-                height: itemHeight,
-                child: ParticipantTile(participant: participant),
+          // Teams-like Column/Row Logic
+          int crossAxisCount = 1;
+          if (count > 1 && count <= 2) crossAxisCount = 1; // Stack 2 people
+          if (count > 2 && count <= 4) crossAxisCount = 2; // 2x2
+          if (count > 4) crossAxisCount = 3; // 3x3 approx
+          // Dynamic Aspect Ratio
+          double childAspectRatio = 1.0;
+          if (count <= 2) {
+            // If 1 or 2 people, use available height
+            // Minus some padding
+            childAspectRatio =
+                constraints.maxWidth / (constraints.maxHeight / count);
+          } else {
+            childAspectRatio = 1.0; // Square tiles
+          }
+          return GridView.builder(
+            itemCount: count,
+            physics: const BouncingScrollPhysics(),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: crossAxisCount,
+              crossAxisSpacing: 4,
+              mainAxisSpacing: 4,
+              childAspectRatio: childAspectRatio,
+            ),
+            itemBuilder: (context, index) {
+              return Container(
+                decoration: BoxDecoration(
+                  color: Colors.grey[900],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.white12),
+                ),
+                clipBehavior: Clip.hardEdge,
+                child: ParticipantTile(participant: participants[index]),
               );
-            }).toList(),
+            },
           );
         },
       ),
     );
   }
 
+  // Widget _buildControls() {
+  //   return Row(
+  //     mainAxisAlignment: MainAxisAlignment.center,
+  //     children: [
+  //       _controlButton(
+  //         icon: _isMicMuted ? Icons.mic_off : Icons.mic,
+  //         onPressed: _toggleMic,
+  //       ),
+  //       const SizedBox(width: 24),
+  //       GestureDetector(
+  //         onTap: _hangUp,
+  //         child: Container(
+  //           width: 68,
+  //           height: 68,
+  //           decoration: const BoxDecoration(
+  //             color: Colors.red,
+  //             shape: BoxShape.circle,
+  //           ),
+  //           child: const Icon(Icons.call_end, color: Colors.white, size: 30),
+  //         ),
+  //       ),
+  //       const SizedBox(width: 24),
+  //       if (widget.callType == "video")
+  //         _controlButton(
+  //           icon: _isCameraOff ? Icons.videocam_off : Icons.videocam,
+  //           onPressed: _toggleCamera,
+  //         ),
+  //     ],
+  //   );
+  // }
   Widget _buildControls() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -394,6 +567,14 @@ Future<void> _toggleMic() async {
           onPressed: _toggleMic,
         ),
         const SizedBox(width: 24),
+        // Only show camera toggle if it's a video call, OR if you want to allow switching
+        if (widget.callType == 'video') ...[
+          _controlButton(
+            icon: _isCameraOff ? Icons.videocam_off : Icons.videocam,
+            onPressed: _toggleCamera,
+          ),
+          const SizedBox(width: 24),
+        ],
         GestureDetector(
           onTap: _hangUp,
           child: Container(
@@ -403,15 +584,9 @@ Future<void> _toggleMic() async {
               color: Colors.red,
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.call_end, color: Colors.white, size: 30),
+            child: const Icon(Icons.call_end, color: Colors.white, size: 32),
           ),
         ),
-        const SizedBox(width: 24),
-        if (widget.callType == "video")
-          _controlButton(
-            icon: _isCameraOff ? Icons.videocam_off : Icons.videocam,
-            onPressed: _toggleCamera,
-          ),
       ],
     );
   }
@@ -423,13 +598,13 @@ Future<void> _toggleMic() async {
     return GestureDetector(
       onTap: onPressed,
       child: Container(
-        width: 60,
-        height: 60,
+        width: 50,
+        height: 50,
         decoration: BoxDecoration(
           color: Colors.grey[800],
           shape: BoxShape.circle,
         ),
-        child: Icon(icon, color: Colors.white, size: 28),
+        child: Icon(icon, color: Colors.white, size: 24),
       ),
     );
   }
