@@ -28,7 +28,7 @@ class _GroupCallScreenState extends State<GroupCallScreen> {
 
     // DECIDE MODE HERE: Encode into URL
     String mode = _isVideoCall ? 'video' : 'audio';
-    String newLink = "https://teams.hrm.com/meet/$randomId?mode=$mode";
+    String newLink = "https://zeai_project.com/meet/$randomId?mode=$mode";
 
     setState(() {
       _generatedRoomId = newLink;

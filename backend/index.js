@@ -38,7 +38,7 @@ app.use(express.urlencoded({ extended: true }));
 
 const corsOptions = {
   origin: [
-    "https://hrm15.netlify.app",
+    "https://hrm151.netlify.app",
     "https://zeai-project.onrender.com",
     "http://localhost:5000",
   ],
